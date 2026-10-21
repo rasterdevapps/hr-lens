@@ -18,3 +18,5 @@ artifacts/
 coverage/
 .DS_Store
 Thumbs.db
+
+backend/release-staging/

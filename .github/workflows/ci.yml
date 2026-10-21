@@ -38,6 +38,22 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
+      - name: Prepare pinned Windows encoder for synthetic recording tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Hash from microsoft/winget-pkgs Gyan.FFmpeg/8.1.2 installer manifest.
+          $archive = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          Invoke-WebRequest 'https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-full_build.zip' -OutFile $archive
+          if ((Get-FileHash $archive).Hash -ne 'B8CDEFAB5F50590A076C27C2B56B0294A0E6154FADED28BA1BA05EBC4F801F57') {
+            throw 'FFmpeg archive checksum mismatch'
+          }
+          $encoder = Join-Path $env:RUNNER_TEMP 'encoder'
+          Expand-Archive $archive -DestinationPath $encoder
+          $bin = Join-Path $encoder 'ffmpeg-8.1.2-full_build/bin'
+          "HRLENS_TEST_FFMPEG=$bin/ffmpeg.exe" >> $env:GITHUB_ENV
+          "HRLENS_TEST_FFPROBE=$bin/ffprobe.exe" >> $env:GITHUB_ENV
+          "HRLENS_REQUIRE_ENCODER_TESTS=1" >> $env:GITHUB_ENV
       - name: Unit tests
         run: |
           mkdir -p ../artifacts
@@ -57,20 +73,27 @@ jobs:
         env:
           CGO_ENABLED: '0'
         run: go build -trimpath -ldflags='-H=windowsgui' -o ../artifacts/hrlens-agentw.exe ./cmd/agent
-      - name: Validate Windows development archive
+      - name: Build complete development install packages from tracked templates
+        run: go run ./cmd/release -dev -out ../artifacts/packages
+      - name: Verify packaged Windows checksums
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $files = @('../artifacts/hrlens-agent.exe', '../artifacts/hrlens-agentw.exe', '../artifacts/hrlens-server.exe')
-          Compress-Archive -Path $files -DestinationPath ../artifacts/windows-amd64-dev.zip
-          $expanded = Join-Path $env:RUNNER_TEMP 'hrlens-archive-check'
-          Expand-Archive ../artifacts/windows-amd64-dev.zip -DestinationPath $expanded
-          foreach ($file in $files) {
-            $name = Split-Path $file -Leaf
-            if ((Get-FileHash $file).Hash -ne (Get-FileHash (Join-Path $expanded $name)).Hash) {
-              throw "Archive round-trip failed for $name"
+          $expanded = Join-Path $env:RUNNER_TEMP 'hrlens-package-check'
+          Expand-Archive ../artifacts/packages/hrlens-agent-windows.zip -DestinationPath $expanded
+          $package = Join-Path $expanded 'hrlens-agent-windows'
+          $manifest = Get-Content (Join-Path $package 'SHA256SUMS.json') -Raw | ConvertFrom-Json
+          foreach ($entry in $manifest.PSObject.Properties) {
+            if ((Get-FileHash (Join-Path $package $entry.Name)).Hash.ToLowerInvariant() -ne $entry.Value) {
+              throw "Package checksum failed for $($entry.Name)"
             }
           }
+          foreach ($name in @('hrlens-agent.exe', 'hrlens-agentw.exe', 'install.cmd', 'register.cmd', 'README.txt', 'DEVELOPMENT.txt')) {
+            if (-not (Test-Path (Join-Path $package $name))) { throw "Missing package file: $name" }
+          }
+          & (Join-Path $package 'hrlens-agent.exe') 2>&1 | Out-String | Write-Output
+          if ($LASTEXITCODE -ne 2) { throw "Packaged console CLI did not return usage exit code" }
+          $global:LASTEXITCODE = 0
       - name: Upload test logs and development executables
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

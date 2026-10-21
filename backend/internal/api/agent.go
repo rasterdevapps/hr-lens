@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"hrlens/backend/internal/auth"
+	"hrlens/backend/internal/capability"
 )
 
 // ---------- Desktop agent API ----------
@@ -68,11 +70,12 @@ func (s *Server) requireDevice(next http.HandlerFunc) http.Handler {
 }
 
 type registerRequest struct {
-	Email        string `json:"email"`
-	Password     string `json:"password"`
-	DeviceName   string `json:"deviceName"`
-	OS           string `json:"os"`
-	AgentVersion string `json:"agentVersion"`
+	Email        string             `json:"email"`
+	Password     string             `json:"password"`
+	DeviceName   string             `json:"deviceName"`
+	OS           string             `json:"os"`
+	AgentVersion string             `json:"agentVersion"`
+	Capabilities *capability.Report `json:"capabilities"`
 }
 
 // POST /api/agent/register — body {email, password, deviceName, os, agentVersion}; returns {token, userId, name}
@@ -121,9 +124,9 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	err = pgx.BeginFunc(r.Context(), s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(r.Context(), `
-			INSERT INTO devices (user_id, name, os, agent_version, token_hash, last_seen_at)
-			VALUES ($1, $2, $3, $4, $5, now())`,
-			userID, name, truncate(req.OS, 60), truncate(req.AgentVersion, 30), tokenHash); err != nil {
+			INSERT INTO devices (user_id, name, os, agent_version, token_hash, last_seen_at, capabilities)
+			VALUES ($1, $2, $3, $4, $5, now(), $6)`,
+			userID, name, truncate(req.OS, 60), truncate(req.AgentVersion, 30), tokenHash, capability.JSON(req.Capabilities)); err != nil {
 			return err
 		}
 		_, err := tx.Exec(r.Context(), `DELETE FROM activity_events WHERE user_id = $1 AND device_id IS NULL`, userID)
@@ -140,6 +143,21 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) {
 // POST /api/agent/heartbeat — keeps the person online; tells the agent what to do
 func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	d := deviceFrom(r)
+	var body struct {
+		Capabilities *capability.Report `json:"capabilities"`
+	}
+	// Older agents send an empty body. Keep their existing capability value.
+	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&body)
+	if err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "Invalid capabilities")
+		return
+	}
+	if body.Capabilities != nil {
+		if _, err := s.db.Exec(r.Context(), `UPDATE devices SET capabilities = $2 WHERE id = $1`, d.ID, capability.JSON(body.Capabilities)); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	if _, err := s.db.Exec(r.Context(), `UPDATE users SET last_active_at = now() WHERE id = $1`, d.UserID); err != nil {
 		s.fail(w, r, err)
 		return

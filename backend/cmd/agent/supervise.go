@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -21,6 +24,18 @@ const (
 )
 
 var errRestart = errors.New("restart requested")
+
+var workerShutdownTimeout = 15 * time.Second
+
+const parentPipeEnv = "HRLENS_PARENT_PIPE"
+
+// watchParent cancels a Windows worker when its supervisor closes the inherited pipe.
+// It also handles an unexpected supervisor crash without a machine-wide IPC endpoint.
+func watchParent(cancel context.CancelFunc) {
+	if os.Getenv(parentPipeEnv) == "1" {
+		go func() { _, _ = io.Copy(io.Discard, os.Stdin); cancel() }()
+	}
+}
 
 const (
 	firstRetry = 5 * time.Second
@@ -58,21 +73,50 @@ func superviseCmd(log *slog.Logger, worker func() *exec.Cmd, signals <-chan os.S
 	for {
 		cmd := worker()
 		started := time.Now()
-		if err := cmd.Start(); err != nil {
+		reader, writer, err := os.Pipe()
+		if err != nil {
 			return err
 		}
+		if cmd.Stdin != nil {
+			reader.Close()
+			writer.Close()
+			return errors.New("worker stdin must be available for shutdown")
+		}
+		cmd.Stdin = reader
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		cmd.Env = append(cmd.Env, parentPipeEnv+"=1")
+		if err := cmd.Start(); err != nil {
+			reader.Close()
+			writer.Close()
+			return err
+		}
+		reader.Close()
 		done := make(chan error, 1)
 		go func() { done <- cmd.Wait() }()
 
-		var err error
+		err = nil
 		select {
 		case sig := <-signals:
 			// Signing out: let the worker save its recording and send what is left
-			cmd.Process.Signal(sig)
-			<-done
+			writer.Close()
+			if runtime.GOOS != "windows" {
+				_ = cmd.Process.Signal(sig)
+			}
+			select {
+			case <-done:
+			case <-time.After(workerShutdownTimeout):
+				log.Warn("worker did not finish shutdown; terminating it")
+				if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+					return err
+				}
+				<-done
+			}
 			return nil
 		case err = <-done:
 		}
+		writer.Close()
 
 		code := 0
 		var exitErr *exec.ExitError

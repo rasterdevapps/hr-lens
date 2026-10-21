@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"hrlens/backend/internal/auth"
+	"hrlens/backend/internal/capability"
 )
 
 // ---------- Screenshots and recordings for the Monitoring pages ----------
@@ -118,13 +120,9 @@ type liveStatus struct {
 	Device   string     `json:"device"` // most recently seen device
 	LastSeen *time.Time `json:"lastSeen"`
 	FrameAt  *time.Time `json:"frameAt"` // newest live frame, if any
-	// NoScreen: that device's agent cannot capture the screen (Windows and macOS so far)
-	NoScreen bool `json:"noScreen"`
-}
-
-// screenCaptureOS reports whether the agent can capture the screen on a device's OS ("linux/amd64").
-func screenCaptureOS(osName string) bool {
-	return osName == "" || strings.HasPrefix(osName, "linux/")
+	// NoScreen reflects this device's feature report, with a legacy Linux fallback.
+	NoScreen     bool            `json:"noScreen"`
+	Capabilities json.RawMessage `json:"capabilities"`
 }
 
 // GET /api/monitoring/live?users=1,2 — who can be watched; asking also starts their live view
@@ -136,10 +134,10 @@ func (s *Server) liveStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	me := userFrom(r)
 	rows, err := s.db.Query(r.Context(), `
-		SELECT u.id, d.name, d.os, d.last_seen_at
+		SELECT u.id, d.name, d.os, d.last_seen_at, d.capabilities
 		FROM users u
 		LEFT JOIN LATERAL (
-			SELECT name, os, last_seen_at FROM devices
+			SELECT name, os, last_seen_at, capabilities FROM devices
 			WHERE user_id = u.id AND revoked_at IS NULL
 			ORDER BY last_seen_at DESC NULLS LAST LIMIT 1
 		) d ON true
@@ -153,11 +151,11 @@ func (s *Server) liveStatus(w http.ResponseWriter, r *http.Request) {
 	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (liveStatus, error) {
 		var st liveStatus
 		var name, osName *string
-		err := row.Scan(&st.UserID, &name, &osName, &st.LastSeen)
+		err := row.Scan(&st.UserID, &name, &osName, &st.LastSeen, &st.Capabilities)
 		if name != nil {
 			st.Device = *name
 		}
-		st.NoScreen = osName != nil && !screenCaptureOS(*osName)
+		st.NoScreen = osName == nil || !capability.Live(*osName, st.Capabilities)
 		return st, err
 	})
 	if err != nil {
@@ -192,6 +190,13 @@ func (s *Server) liveFrame(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM users u WHERE u.id = $3 AND `+visiblePeople+`)`,
 		string(me.Role), me.ID, id).Scan(&visible); err != nil || !visible {
 		writeError(w, http.StatusNotFound, "Not found")
+		return
+	}
+	var osName string
+	var caps []byte
+	err := s.db.QueryRow(r.Context(), `SELECT os, capabilities FROM devices WHERE user_id = $1 AND revoked_at IS NULL ORDER BY last_seen_at DESC NULLS LAST LIMIT 1`, id).Scan(&osName, &caps)
+	if err != nil || !capability.Live(osName, caps) {
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	s.live.watch(id)

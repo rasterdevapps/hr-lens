@@ -10,6 +10,12 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"   # the backend folder
 ROOT="$(cd "$HERE/.." && pwd)"             # the project root
 OUT="$HERE/deploy/out"
+RELEASE_DIR="${HRLENS_RELEASE_DIR:-$HERE/release-staging}"
+[ -d "$RELEASE_DIR" ] || { echo "Set HRLENS_RELEASE_DIR to a completed release staging directory" >&2; exit 1; }
+for package in hrlens-agent-linux.tar.gz hrlens-agent-windows.zip; do
+  [ -f "$RELEASE_DIR/$package" ] || { echo "Missing release package: $package" >&2; exit 1; }
+done
+mkdir -p "$OUT"
 
 echo "==> Building the Angular app (production)"
 ( cd "$ROOT/screen-management" && npx ng build --configuration production )
@@ -23,9 +29,10 @@ mkdir -p "$OUT/web" "$OUT/dist"
 cp -r "$ROOT/screen-management/dist/screen-management/browser/." "$OUT/web/"
 # Served files the server needs: the extension and the signed agent releases + download package.
 [ -d "$HERE/dist/extension" ] && cp -r "$HERE/dist/extension" "$OUT/dist/extension"
-[ -d "$HERE/dist/agent" ]     && cp -r "$HERE/dist/agent"     "$OUT/dist/agent"
-[ -d "$HERE/dist/hrlens-agent-linux" ] && cp -r "$HERE/dist/hrlens-agent-linux" "$OUT/dist/hrlens-agent-linux"
-[ -f "$HERE/dist/hrlens-agent-linux.tar.gz" ] && cp "$HERE/dist/hrlens-agent-linux.tar.gz" "$OUT/dist/"
+[ -d "$RELEASE_DIR/agent" ]     && cp -r "$RELEASE_DIR/agent"     "$OUT/dist/agent"
+[ -d "$RELEASE_DIR/hrlens-agent-linux" ] && cp -r "$RELEASE_DIR/hrlens-agent-linux" "$OUT/dist/hrlens-agent-linux"
+[ -f "$RELEASE_DIR/hrlens-agent-linux.tar.gz" ] && cp "$RELEASE_DIR/hrlens-agent-linux.tar.gz" "$OUT/dist/"
+cp "$RELEASE_DIR/hrlens-agent-windows.zip" "$OUT/dist/"
 cp "$HERE/deploy/.env.production.example" "$OUT/.env.example"
 cp "$HERE/deploy/hrlens.service" "$OUT/hrlens.service"
 cp "$HERE/deploy/Caddyfile" "$OUT/Caddyfile"
