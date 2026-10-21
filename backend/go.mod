@@ -3,8 +3,10 @@ module hrlens/backend
 go 1.23
 
 require (
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/jackc/pgx/v5 v5.7.1
 	golang.org/x/crypto v0.31.0
+	golang.org/x/sys v0.28.0
 )
 
 require (

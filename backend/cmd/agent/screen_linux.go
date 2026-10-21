@@ -76,6 +76,15 @@ func (s *screen) locked() bool {
 	return s.wasLocked
 }
 
+func (s *screen) attendanceLocked() bool { return s.locked() }
+func (s *screen) captureSuspended() bool { return s.locked() }
+func (s *screen) canCaptureNow() bool    { return !s.captureSuspended() }
+func (s *screen) sessionKey() string     { return "" }
+
+func (s *screen) startLifecycle(context.Context, context.CancelFunc) (func(), error) {
+	return func() {}, nil
+}
+
 var (
 	xpropID     = regexp.MustCompile(`window id # (0x[0-9a-fA-F]+)`)
 	xpropString = regexp.MustCompile(`^(\w+)\([^)]*\) = (.*)$`)

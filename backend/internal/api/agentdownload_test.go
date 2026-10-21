@@ -84,3 +84,15 @@ func TestAgentDownloadMissingAndUnknown(t *testing.T) {
 		t.Errorf("unknown os status = %d, want 400", rec.Code)
 	}
 }
+
+func TestWindowsDownloadServesDeployPackage(t *testing.T) {
+	s := newDownloadServer(t, map[string][]byte{"hrlens-agent-windows.zip": []byte("synthetic Windows ZIP")})
+	rec := httptest.NewRecorder()
+	s.agentDownload(rec, httptest.NewRequest(http.MethodGet, "/api/agent/download?os=windows", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "synthetic Windows ZIP" {
+		t.Fatalf("Windows download: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Content-Disposition") != `attachment; filename="hrlens-agent-windows.zip"` {
+		t.Fatal("incorrect Windows filename")
+	}
+}

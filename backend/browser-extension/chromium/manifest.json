@@ -1,10 +1,12 @@
 {
   "manifest_version": 3,
   "name": "HR Lens",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Tells the HR Lens agent on this computer which website the front tab shows (the site name only).",
   "permissions": [
-    "tabs"
+    "tabs",
+    "nativeMessaging",
+    "alarms"
   ],
   "host_permissions": [
     "http://127.0.0.1:47123/*"

@@ -215,15 +215,14 @@ sudo ./install.sh</pre>
               }
               @case ('windows') {
                 <div class="install-steps">
-                  <h4><span class="num">1</span>Install it on the computer (administrator)</h4>
-                  <p class="step-text">Unzip the download, then right-click <code>install.cmd</code> and choose <strong>Run as administrator</strong>, once per computer. Enter the HR Lens server address when asked.</p>
-                  <p class="step-text">It installs the agent for everyone who signs in to the computer and makes it start at sign-in.</p>
+                  <h4><span class="num">1</span>Install the Windows agent</h4>
+                  <p class="step-text">Extract the complete ZIP and run <code>install.cmd</code> for your Windows account. IT can run it as administrator to install for everyone on the computer.</p>
+                  <p class="step-text">Use a build verified by your administrator. Check with IT if Windows reports an unknown or unverified publisher.</p>
                 </div>
                 <div class="install-steps">
-                  <h4><span class="num">2</span>Each person signs in once</h4>
-                  <p class="step-text">Signed in to Windows as themselves, each employee opens this file and enters their HR Lens email and password:</p>
-                  <pre class="cmd">C:\Program Files\HR Lens\register.cmd</pre>
-                  <p class="note"><mat-icon>info</mat-icon>On Windows the agent tracks apps, windows, sign-in and screen locks. Screenshots, recordings, live screen and key/click counts are not available on Windows yet. Windows may show "Windows protected your PC": choose More info → Run anyway.</p>
+                  <h4><span class="num">2</span>Register your account</h4>
+                  <p class="step-text">Open <code>register.cmd</code> from the extracted folder as yourself, without administrator rights. Enter your HR Lens server address, email and password, then sign out and back in to start the installed agent.</p>
+                  <p class="note"><mat-icon>info</mat-icon>The tray icon shows monitoring status and offers Quit. Available features depend on the installed agent and its setup. Screen recording needs FFmpeg; website domains need the Chrome or Edge extension. See the package README for setup and validation.</p>
                 </div>
               }
               @default {

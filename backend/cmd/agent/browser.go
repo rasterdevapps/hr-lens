@@ -1,10 +1,7 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -62,16 +59,16 @@ func (t *tabs) host(windowTitle string) string {
 	defer t.mu.Unlock()
 	best, bestLen := "", 0
 	for title, info := range t.byName {
-		if len(title) > bestLen && strings.HasPrefix(windowTitle, title) {
+		if time.Since(info.at) < 3*time.Minute && len(title) > bestLen && strings.HasPrefix(windowTitle, title) {
 			best, bestLen = info.host, len(title)
 		}
 	}
 	return best
 }
 
-// serveTabs accepts reports from the extension until ctx ends. Only browser extensions on
-// this computer can reach it.
-func (a *agent) serveTabs(ctx context.Context) {
+// tabHandler handles browser reports independently of the production listener so tests
+// can use an isolated ephemeral port without contacting a running desktop agent.
+func (a *agent) tabHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /tab", func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
@@ -93,17 +90,20 @@ func (a *agent) serveTabs(ctx context.Context) {
 	mux.HandleFunc("GET /ping", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("hrlens-agent " + version))
 	})
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	ln, err := net.Listen("tcp", tabListenAddr)
-	if err != nil {
-		a.log.Warn("browser extension link unavailable: websites will not be recorded", "error", err)
-		return
+	return mux
+}
+
+// recent reports whether the optional extension has reached this session recently.
+func (t *tabs) recent() bool {
+	if t == nil {
+		return false
 	}
-	go func() {
-		<-ctx.Done()
-		srv.Close()
-	}()
-	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		a.log.Warn("browser extension link stopped", "error", err)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, info := range t.byName {
+		if time.Since(info.at) < 3*time.Minute {
+			return true
+		}
 	}
+	return false
 }
