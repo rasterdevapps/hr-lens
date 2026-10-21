@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -60,5 +61,21 @@ func TestPortableSupervisorRestart(t *testing.T) {
 	}, make(chan os.Signal), time.Millisecond, time.Millisecond)
 	if err != nil || count != 3 {
 		t.Fatalf("starts=%d error=%v", count, err)
+	}
+}
+
+func TestLifecycleCleanupPreservesUpdateRestart(t *testing.T) {
+	ctx, restart := context.WithCancel(context.Background())
+	userStopped := false
+	closeWindow := stopWhenContextActive(ctx, func() { userStopped = true })
+	restart()
+	closeWindow()
+	if userStopped {
+		t.Fatal("update cleanup became a user quit")
+	}
+	closeActive := stopWhenContextActive(context.Background(), func() { userStopped = true })
+	closeActive()
+	if !userStopped {
+		t.Fatal("unexpected window exit did not stop collection")
 	}
 }

@@ -36,6 +36,7 @@ type screen struct {
 	nid               notifyIconDataW
 	taskbarCreatedMsg uint32
 	stop              context.CancelFunc
+	windowStop        context.CancelFunc
 }
 
 var (
@@ -344,7 +345,7 @@ func (s *screen) startLifecycle(ctx context.Context, stop context.CancelFunc) (f
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		defer close(doneCh)
-		defer stop()
+		defer stopWhenContextActive(ctx, stop)()
 
 		lifecycleWndProcOnce.Do(func() {
 			lifecycleWndProcPtr = syscall.NewCallback(lifecycleWndProc)
@@ -363,6 +364,7 @@ func (s *screen) startLifecycle(ctx context.Context, stop context.CancelFunc) (f
 
 		s.winMu.Lock()
 		s.stop = stop
+		s.windowStop = stopWhenContextActive(ctx, stop)
 		if msgName, err := syscall.UTF16PtrFromString("TaskbarCreated"); err == nil {
 			msg, _, _ := procRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(msgName)))
 			s.taskbarCreatedMsg = uint32(msg)
@@ -545,6 +547,15 @@ func (s *screen) showTrayMenu(hwnd uintptr) {
 	}
 }
 
+func (s *screen) requestWindowStop() {
+	s.winMu.Lock()
+	stop := s.windowStop
+	s.winMu.Unlock()
+	if stop != nil {
+		stop()
+	}
+}
+
 func (s *screen) requestStop() {
 	s.winMu.Lock()
 	stop := s.stop
@@ -610,7 +621,7 @@ func lifecycleWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr 
 				return 0
 			}
 		case wmClose:
-			s.requestStop()
+			s.requestWindowStop()
 			s.winMu.Lock()
 			nid := s.nid
 			s.nid.HWnd = 0
@@ -623,7 +634,7 @@ func lifecycleWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr 
 			_, _, _ = procDestroyWindow.Call(hwnd)
 			return 0
 		case wmDestroy:
-			s.requestStop()
+			s.requestWindowStop()
 			_, _, _ = procPostQuitMessage.Call(0)
 			return 0
 		}

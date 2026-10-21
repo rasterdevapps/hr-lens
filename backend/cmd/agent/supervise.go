@@ -147,3 +147,13 @@ func superviseCmd(log *slog.Logger, worker func() *exec.Cmd, signals <-chan os.S
 		wait = min(wait*2, maxRetry)
 	}
 }
+
+// Closing a lifecycle window during an update is cleanup, not a user request to
+// quit. Preserve the restart context distinction used by the supervisor.
+func stopWhenContextActive(ctx context.Context, stop context.CancelFunc) context.CancelFunc {
+	return func() {
+		if ctx.Err() == nil {
+			stop()
+		}
+	}
+}
