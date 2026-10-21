@@ -134,6 +134,9 @@ func replaceVerified(bin string, body io.Reader, sha string) error {
 	defer os.Remove(tmp) // no-op after the rename
 	h := sha256.New()
 	_, err = io.Copy(io.MultiWriter(f, h), body)
+	if err == nil {
+		err = f.Sync()
+	}
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
@@ -158,10 +161,9 @@ func replaceWithBackup(src, dst string, rename func(string, string) error, remov
 	if remove == nil {
 		remove = os.Remove
 	}
-	cleanupOldBackups(dst, remove)
-
 	var backup string
 	if _, err := os.Stat(dst); err == nil {
+		cleanupOldBackups(dst, remove)
 		backup, err = uniqueBackupPath(dst)
 		if err != nil {
 			return err

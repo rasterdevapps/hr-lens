@@ -15,14 +15,11 @@ import (
 	"unsafe"
 )
 
-// On Windows the agent reports the front application and window, screen locks, sign-in, and
-// visible tray status. Screenshots, recordings, live view and key/click counts remain disabled
-// until the Windows capture stage enables their capability hooks.
+// Windows runs in a visible interactive session. Runtime probes and input-hook startup
+// determine independently advertised capture, recording and aggregate input capabilities.
 
 // canCapture says whether this platform can take screenshots and recordings.
 const canCapture = false
-
-var errNoWindowsCapture = errors.New("screen capture is not available on Windows yet")
 
 type window struct {
 	app     string // program name without .exe, e.g. "chrome"
@@ -31,7 +28,8 @@ type window struct {
 }
 
 type screen struct {
-	state sessionLifecycleState
+	state      sessionLifecycleState
+	ffmpegPath string
 
 	winMu             sync.Mutex
 	hwnd              uintptr
@@ -175,6 +173,7 @@ var (
 )
 
 func newScreen() (*screen, error) {
+	ensureProcessDPI()
 	s := &screen{}
 	s.refreshWTSState()
 	return s, nil
@@ -590,6 +589,9 @@ func lifecycleWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr 
 		case wmEndSession:
 			s.state.mu.Lock()
 			s.state.ending = wParam != 0
+			if wParam != 0 {
+				s.state.signedOut = true
+			}
 			s.state.mu.Unlock()
 			if wParam != 0 {
 				s.requestStop()
@@ -694,14 +696,6 @@ func friendlyName(process, title string) string {
 	}
 	return process
 }
-
-func (s *screen) screenshot(context.Context, string, int, int) error { return errNoWindowsCapture }
-func (s *screen) record(context.Context, string, time.Duration, func() bool) error {
-	return errNoWindowsCapture
-}
-
-// watchInput: counting key presses and clicks on Windows is not built yet.
-func (s *screen) watchInput(context.Context, func(), func()) error { return errors.ErrUnsupported }
 
 // singleInstance makes sure only one agent runs in this sign-in session: a second copy finds
 // the session's named mutex already there.

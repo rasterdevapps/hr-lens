@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	// checkpointEvery bounds the maximum in-progress activity/counter loss window on an abrupt
-	// crash or power loss. Pending batches are also persisted before upload and after server ack,
+	// checkpointEvery schedules persistence of in-progress activity and counters. A crash
+	// can lose samples since the last successfully completed write. Pending batches are also persisted before upload and after server ack,
 	// providing at-least-once delivery until the server protocol adds idempotent batch IDs.
 	checkpointEvery = 5 * time.Second
 
@@ -748,6 +748,8 @@ type sessionLifecycleState struct {
 	sessionDisconnected bool
 	powerSuspended      bool
 	ending              bool
+	signedOut           bool
+	transitions         []presence
 	logonTime           time.Time
 }
 
@@ -770,16 +772,26 @@ func (st *sessionLifecycleState) applyWTSSessionChange(code uintptr) (stopReques
 	defer st.mu.Unlock()
 	switch code {
 	case wtsSessionLock:
+		if !st.sessionLocked {
+			st.transitions = append(st.transitions, presence{Kind: "lock", At: time.Now()})
+		}
 		st.sessionLocked = true
 	case wtsSessionUnlock:
+		if st.sessionLocked {
+			st.transitions = append(st.transitions, presence{Kind: "unlock", At: time.Now()})
+		}
 		st.sessionLocked = false
 	case wtsConsoleDisconnect, wtsRemoteDisconnect:
 		st.sessionDisconnected = true
 	case wtsConsoleConnect, wtsRemoteConnect:
 		st.sessionDisconnected = false
 	case wtsSessionLogoff:
+		st.signedOut = true
 		st.sessionDisconnected = true
 		return true
+	}
+	if len(st.transitions) > maxPendingPresence {
+		st.transitions = st.transitions[len(st.transitions)-maxPendingPresence:]
 	}
 	return false
 }
@@ -821,4 +833,12 @@ func (st *sessionLifecycleState) sessionStart() (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return st.logonTime, true
+}
+
+func (st *sessionLifecycleState) takePresenceTransitions() []presence {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	pending := st.transitions
+	st.transitions = nil
+	return pending
 }

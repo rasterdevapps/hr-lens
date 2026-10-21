@@ -110,6 +110,11 @@ func copyInto(src, dst string) error {
 	if same, _ := sameFile(src, dst); same {
 		return nil
 	}
+	unlock, err := acquireUpdateLock(dst)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -122,6 +127,9 @@ func copyInto(src, dst string) error {
 	}
 	defer os.Remove(tmp) // no-op after the rename
 	_, err = io.Copy(out, in)
+	if err == nil {
+		err = out.Sync()
+	}
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}

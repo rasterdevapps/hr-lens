@@ -48,6 +48,37 @@ usable encoder, recordings are unavailable; other available capabilities remain
 independent. CI uses synthetic frames with a checksum-pinned FFmpeg build and
 checks the generated WebM using ffprobe; it does not record a person's desktop.
 
+## Session lifecycle and offline recovery
+
+The mandatory tray icon has a status menu and Quit action. Collection starts only
+once the tray and Windows session notifications are available. WTS supplies the
+actual sign-in time and lock state. Secure desktops (including UAC), disconnected
+sessions and sleep pause capture without being counted as attendance locks.
+Windows shutdown flushing is best effort; Windows can terminate applications
+before their network requests finish.
+
+Pending activity, presence and per-minute input counts are checkpointed every
+five seconds under `%APPDATA%\hrlens-agent\spool\session-<id>`. A crash can lose
+recent samples since the last completed checkpoint. The queue retains at most
+5,000 activity intervals, 1,000 presence events and 1,440 input minutes, dropping
+oldest entries when full. Media is bounded to 1 GiB per session queue; set
+`HRLENS_MAX_SPOOL_BYTES` to another positive byte limit if required. Inactive
+session queues are drained after a later sign-in, protected by ownership locks.
+The aggregate disk budget is the per-queue limit multiplied by retained sessions;
+IT should monitor user profile storage. Incomplete recording files are discarded.
+
+Batches use at-least-once delivery: an acknowledgement lost during a crash or a
+network interruption can produce duplicates. An uploaded-media receipt prevents
+resending when only local deletion failed. No exactly-once delivery guarantee is
+made. Disk-full or checkpoint failures are logged and pending batches are retried.
+
+For an upgrade from the original partial Windows agent, quit all older agents
+before migrating a legacy `spool` directory. Move only its media, companion JSON
+metadata, and `.uploaded` receipts into `spool\session-legacy`; preserve their
+filenames. New agents recover that inactive queue. Do not move `config.json`,
+credentials, or files from an active session. Legacy versions lack queue ownership
+locks, so their root-level spool is not automatically taken over.
+
 ## Chrome and Edge domains
 
 Installation registers `com.hrlens.agent` as a native messaging host for Chrome
@@ -118,7 +149,10 @@ only if needed. A server advertising a newer release can update it again: IT mus
 also withdraw that release or use the approved rollback deployment procedure.
 Do not delete user configuration or pending spool files as part of binary rollback.
 If an update leaves a backup executable, retain it while its process is running;
-remove retired backups only after the corresponding process has stopped.
+remove retired backups only after the corresponding process has stopped. The running
+EXE replacement requires two renames: a power failure between them can leave the
+installed path absent. Restore the retained verified package before restarting;
+do not treat that replacement as a crash-atomic transaction.
 
 Logs live under `%APPDATA%\hrlens-agent`. Share redacted diagnostics only; tokens,
 real screenshots, window titles and employee records do not belong in issues.

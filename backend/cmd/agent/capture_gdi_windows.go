@@ -27,6 +27,8 @@ var (
 	getDIBits              = gdi32.NewProc("GetDIBits")
 )
 
+var desktopCaptureSlot = make(chan struct{}, 1)
+
 var errDesktopSuspended = errors.New("desktop capture suspended")
 
 type bitmapInfoHeader struct {
@@ -47,6 +49,12 @@ func captureDesktop(ctx context.Context, suspended func() bool) (*image.RGBA, er
 	}
 	if suspended == nil || suspended() {
 		return nil, errDesktopSuspended
+	}
+	select {
+	case desktopCaptureSlot <- struct{}{}:
+		defer func() { <-desktopCaptureSlot }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

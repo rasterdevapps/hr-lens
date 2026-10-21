@@ -58,6 +58,21 @@ jobs:
         run: |
           mkdir -p ../artifacts
           go test -count=1 -timeout=3m -json ./... > ../artifacts/go-tests.json
+      - name: Require native Windows regression and encoder tests
+        if: runner.os == 'Windows'
+        run: |
+          python - <<'PYTEST'
+          import json
+          from pathlib import Path
+          events = [json.loads(line) for line in Path('../artifacts/go-tests.json').read_text().splitlines()]
+          required = {'TestWindowsRecording', 'TestWindowsTwoUpdatesWithRunningImages', 'TestWindowsUploadedFileLockedByAnotherProcess', 'TestNativePipeSessionAndFraming', 'TestWindowsEncoderFailureBounded', 'TestWindowsRecordingCancelAndDisplayChange', 'TestWindowsStateWritePreservesLockedPreviousSnapshot', 'TestRecoverOnlyInactiveSessionSpools'}
+          passed = {event.get('Test') for event in events if event.get('Action') == 'pass'}
+          skipped = {event.get('Test') for event in events if event.get('Action') == 'skip'}
+          missing = required - passed
+          if missing or (required & skipped):
+              raise SystemExit(f'Windows checks missing or skipped: {missing | (required & skipped)}')
+          print(f'Required native Windows checks passed: {sorted(required)}')
+          PYTEST
       - name: Race tests (Linux)
         if: runner.os == 'Linux'
         run: go test -race -count=1 -timeout=3m ./...

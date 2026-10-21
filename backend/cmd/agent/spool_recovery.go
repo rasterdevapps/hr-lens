@@ -115,3 +115,20 @@ func (a *agent) drainSpool(ctx context.Context, dir string) error {
 	}
 	return nil
 }
+
+// Publish complete metadata and media together from the uploader's perspective.
+// A recorder never exposes a partial file with an uploadable extension.
+func (a *agent) publishCapture(part, path string, meta map[string]string) error {
+	a.spoolMu.Lock()
+	defer a.spoolMu.Unlock()
+	if err := writeMeta(path, meta); err != nil {
+		os.Remove(part)
+		return err
+	}
+	if err := replaceStateFile(part, path); err != nil {
+		os.Remove(part)
+		os.Remove(path + ".json")
+		return err
+	}
+	return nil
+}

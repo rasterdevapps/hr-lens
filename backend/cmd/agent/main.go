@@ -6,13 +6,13 @@
 //	hrlens-agent register -server http://localhost:8080 -email you@example.com
 //	hrlens-agent run
 //
-// On Windows only the activity part is built so far (see WINDOWS.md); screen capture is Linux only.
+// Windows runs in an interactive user session; see WINDOWS.md for dependencies and acceptance.
 //
 // Nothing is captured while the screen is locked, on a UAC/secure desktop, while the session is
 // disconnected, or while system power is suspended. Files waiting to be uploaded are kept in a
 // bounded per-session spool folder and retried, and pending activity/presence/input counters are
-// checkpointed every <=5 seconds as well as before and after batch uploads (at-least-once delivery
-// with at most a 5-second loss window on abrupt power loss until a future idempotent server protocol).
+// checkpointed every five seconds and before/after uploads. Delivery is at least once; a crash
+// can lose samples since the last completed checkpoint or repeat an unacknowledged batch.
 package main
 
 import (
@@ -318,6 +318,11 @@ func run(log *slog.Logger) error {
 	if err := os.MkdirAll(a.spool, 0o700); err != nil {
 		return err
 	}
+	unlockSpool, err := ownSpool(a.spool)
+	if err != nil {
+		return fmt.Errorf("own session queue: %w", err)
+	}
+	defer unlockSpool()
 	// Pieces cut off by a crash or power loss cannot be played: drop them
 	if parts, _ := filepath.Glob(filepath.Join(a.spool, "*.part")); len(parts) > 0 {
 		for _, p := range parts {
@@ -337,6 +342,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer stopLifecycle()
+	a.initializeCapabilities(ctx)
 
 	if err := a.loadSnapshot(); err != nil {
 		log.Warn("could not load pending state snapshot", "error", err)
@@ -361,14 +367,14 @@ func run(log *slog.Logger) error {
 	log.Info("agent running", "server", c.Server, "account", c.UserName, "computer", c.DeviceName, "version", version)
 
 	var wg sync.WaitGroup
-	for _, loop := range []func(context.Context){a.heartbeats, a.activity, a.inputCounts, a.screenshots, a.recordings, a.liveFrames, a.uploads, a.serveTabs, a.updates, a.checkpoints} {
+	for _, loop := range []func(context.Context){a.heartbeats, a.activity, a.inputCounts, a.screenshots, a.recordings, a.liveFrames, a.uploads, a.serveTabs, a.updates, a.checkpoints, a.recoverSpools} {
 		wg.Add(1)
 		go func(f func(context.Context)) { defer wg.Done(); f(ctx) }(loop)
 	}
 	wg.Wait()
 	updating := sigCtx.Err() == nil // stopped by a.restart, not by a signal or parent/tray shutdown
-	if !updating {
-		// Stopping means signing out or shutting down
+	if !updating && scr.signedOut() {
+		// Only an actual Windows logoff/end-session is attendance sign-out.
 		a.note("logout", time.Now())
 	}
 	if err := a.checkpointSnapshot(); err != nil {
@@ -456,12 +462,15 @@ func (a *agent) activity(ctx context.Context) {
 	every(ctx, sampleEvery, func() {
 		now := time.Now()
 		locked := a.screen.attendanceLocked()
-		if locked != wasLocked {
-			a.note(map[bool]string{true: "lock", false: "unlock"}[locked], now)
-			wasLocked = locked
+		for _, p := range a.screen.presenceChanges(&wasLocked, now) {
+			a.note(p.Kind, p.At)
 		}
 		suspended := a.screen.captureSuspended()
-		win, err := a.screen.activeWindow()
+		var win window
+		var err error
+		if !locked && !suspended {
+			win, err = a.screen.activeWindow()
+		}
 		if err != nil || locked || suspended {
 			closeOpen(now) // locked, UAC/secure desktop, disconnected, or nothing in front: not working time
 		} else {
@@ -494,32 +503,34 @@ func (a *agent) activity(ctx context.Context) {
 			lastFlush = now
 		}
 	})
+	for _, p := range a.screen.presenceChanges(&wasLocked, time.Now()) {
+		a.note(p.Kind, p.At)
+	}
 	closeOpen(time.Now())
 }
 
 // inputCounts counts key presses and mouse clicks per minute (never which keys), except while
 // capture is suspended (screen locked, UAC/secure desktop, disconnected session, or sleep).
 func (a *agent) inputCounts(ctx context.Context) {
-	count := func(keys, clicks int) func() {
-		return func() {
-			if a.screen.captureSuspended() {
-				return
-			}
-			minute := time.Now().Truncate(time.Minute)
-			a.mu.Lock()
-			m := a.input[minute]
-			if m == nil {
-				m = &inputMinute{Minute: minute}
-				a.input[minute] = m
-				trimInputMapLocked(a.input)
-			}
-			m.Keys += keys
-			m.Clicks += clicks
-			a.mu.Unlock()
+	count := func(keys, clicks int) {
+		if ctx.Err() != nil || a.screen.captureSuspended() {
+			return
 		}
+		minute := time.Now().Truncate(time.Minute)
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		m := a.input[minute]
+		if m == nil {
+			m = &inputMinute{Minute: minute}
+			a.input[minute] = m
+			trimInputMapLocked(a.input)
+		}
+		m.Keys += keys
+		m.Clicks += clicks
 	}
 	for ctx.Err() == nil {
-		err := a.screen.watchInput(ctx, count(1, 0), count(0, 1))
+		err := a.screen.watchInputReady(ctx, count, func() { a.setInputCountsCapability(true) })
+		a.setInputCountsCapability(false)
 		if ctx.Err() != nil {
 			return
 		}
@@ -644,21 +655,29 @@ func (a *agent) screenshots(ctx context.Context) {
 		if time.Now().Before(next) {
 			return
 		}
-		a.mu.Lock()
-		next = time.Now().Add(a.shotEvery)
-		a.mu.Unlock()
 		// No front window yet means the desktop is still starting: the screen is blank
 		if a.screen.captureSuspended() || a.frontWindow().appName == "" {
 			return
 		}
 		at := time.Now()
-		path := filepath.Join(a.spool, "screenshot-"+at.UTC().Format("20060102T150405")+".jpg")
-		if err := a.screen.screenshot(ctx, path, 0, 60); err != nil {
+		path := filepath.Join(a.spool, "screenshot-"+at.UTC().Format("20060102T150405.000000000")+".jpg")
+		part := path + ".part"
+		if err := a.screen.screenshot(ctx, part, 0, 60); err != nil {
 			a.log.Warn("screenshot failed", "error", err)
+			a.setScreenshotsCapability(false)
+			a.setLiveScreenCapability(false)
+			next = time.Now().Add(30 * time.Second)
 			return
 		}
+		a.setScreenshotsCapability(true)
+		a.setLiveScreenCapability(true)
+		a.mu.Lock()
+		next = time.Now().Add(a.shotEvery)
+		a.mu.Unlock()
 		win := a.frontWindow()
-		writeMeta(path, map[string]string{"takenAt": at.Format(time.RFC3339), "app": win.appName, "title": win.title})
+		if err := a.publishCapture(part, path, map[string]string{"takenAt": at.Format(time.RFC3339), "app": win.appName, "title": win.title}); err != nil {
+			a.log.Warn("publishing screenshot failed", "error", err)
+		}
 		a.enforceSpoolLimit()
 	})
 }
@@ -674,28 +693,31 @@ func (a *agent) recordings(ctx context.Context) {
 			continue
 		}
 		start := time.Now()
-		path := filepath.Join(a.spool, "recording-"+start.UTC().Format("20060102T150405")+".webm")
+		path := filepath.Join(a.spool, "recording-"+start.UTC().Format("20060102T150405.000000000")+".webm")
 		part := path + ".part" // not uploaded until finished
 		err := a.screen.record(ctx, part, pieceLength(), a.screen.captureSuspended)
 		took := time.Since(start)
 		if err != nil {
 			os.Remove(part)
 			if ctx.Err() == nil {
+				a.setRecordingsCapability(false)
 				a.log.Warn("recording failed; retrying shortly", "error", err)
 				sleep(ctx, 30*time.Second)
 			}
 			continue
 		}
+		a.setRecordingsCapability(true)
 		if took < 5*time.Second { // too short to be worth keeping
 			os.Remove(part)
 			continue
 		}
 		win := a.frontWindow()
-		writeMeta(path, map[string]string{
+		if err := a.publishCapture(part, path, map[string]string{
 			"startedAt": start.Format(time.RFC3339), "seconds": fmt.Sprint(int(took.Seconds())),
 			"app": win.appName, "title": win.title,
-		})
-		_ = replaceFile(part, path)
+		}); err != nil {
+			a.log.Warn("publishing recording failed", "error", err)
+		}
 		a.enforceSpoolLimit()
 	}
 }
@@ -918,9 +940,12 @@ func (a *agent) postJSON(ctx context.Context, path string, body, out any) error 
 
 // ---------- Helpers ----------
 
-func writeMeta(path string, meta map[string]string) {
-	data, _ := json.Marshal(meta)
-	_ = atomicWriteFile(path+".json", data, 0o600)
+func writeMeta(path string, meta map[string]string) error {
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	return atomicWriteFile(path+".json", data, 0600)
 }
 
 func loadMeta(path string) (map[string]string, error) {

@@ -2,13 +2,13 @@
 
 The `Linux and Windows CI` workflow runs on pull requests, pushes to `main`, and manual dispatches. It needs no repository secrets or employee credentials.
 
-It runs Go unit tests on native Ubuntu and Windows runners, Linux race checks, native agent/server/release builds with CGO disabled, and the Windows GUI agent build. The Windows development ZIP is unpacked and its files are hash-checked. Angular browser tests and production builds run on both operating systems. A separate Linux job initializes a disposable PostgreSQL 16 service with synthetic fixtures and runs the existing integration tests; skipped integration tests fail that job.
+It runs Go unit tests on native Ubuntu and Windows runners, Linux race checks, native agent/server/release builds with CGO disabled, and the Windows GUI agent build. Both complete installer archives are built from tracked templates. The Windows ZIP is unpacked and checked against its checksum manifest. Synthetic VP8/WebM recording tests run with a checksum-pinned FFmpeg build, covering normal completion, lock/cancellation, display changes, and a deliberately hung/failed encoder; required native Windows tests may not be skipped. Browser extension tests verify that Windows never falls back to the shared Linux port. Angular browser tests and production builds run on both operating systems. A separate Linux job initializes a disposable PostgreSQL 16 service with synthetic fixtures and runs the integration tests, including capability registration, heartbeat changes and legacy-device behavior; skipped integration tests fail that job.
 
-Each run retains test logs and development binaries for seven days. These are unsigned `dev` builds: they do not self-update and are not production installers. The workflow does not run the desktop agent, capture screens, publish releases, change registry startup settings, use production databases, or access the private release key.
+Each run retains test logs and development binaries for seven days. These are unsigned `dev` builds: they do not self-update and are development installer packages, not signed production releases. The workflow does not run the desktop agent, capture screens, publish releases, change registry startup settings, use production databases, or access the private release key.
 
 ## Desktop acceptance remains separate
 
-Hosted CI cannot prove the missing Windows capture features work. The current Windows adapter still disables screenshots, recording, live view and input counts. Before deployment, implement the Windows audit plan and test on a dedicated interactive Windows desktop:
+Hosted CI does not prove interactive Windows capture behavior. Before deployment, complete the matrix in [Windows deployment and acceptance](WINDOWS.md) on a dedicated Windows desktop:
 
 - standard-user and machine-wide install, login startup, graceful stop and uninstall;
 - multiple monitors, mixed DPI and negative display coordinates;

@@ -22,7 +22,7 @@ func bitmapRGBA(raw []byte, w, h int) (*image.RGBA, error) {
 	if len(raw) != w*h*4 {
 		return nil, errors.New("invalid bitmap byte count")
 	}
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	img := &image.RGBA{Pix: raw, Stride: w * 4, Rect: image.Rect(0, 0, w, h)}
 	for i := 0; i < len(raw); i += 4 {
 		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = raw[i+2], raw[i+1], raw[i], 255
 	}
