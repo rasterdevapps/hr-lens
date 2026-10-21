@@ -8,8 +8,11 @@
 //
 // On Windows only the activity part is built so far (see WINDOWS.md); screen capture is Linux only.
 //
-// Nothing is captured while the screen is locked. Files waiting to be uploaded are kept in a
-// spool folder and retried, so nothing is lost while the server is unreachable.
+// Nothing is captured while the screen is locked, on a UAC/secure desktop, while the session is
+// disconnected, or while system power is suspended. Files waiting to be uploaded are kept in a
+// bounded per-session spool folder and retried, and pending activity/presence/input counters are
+// checkpointed every <=5 seconds as well as before and after batch uploads (at-least-once delivery
+// with at most a 5-second loss window on abrupt power loss until a future idempotent server protocol).
 package main
 
 import (
@@ -35,6 +38,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"hrlens/backend/internal/capability"
 )
 
 // version is set by cmd/release (-ldflags "-X main.version=..."); a plain go build is "dev",
@@ -179,9 +184,10 @@ func register(args []string) error {
 		}
 	}
 
-	body, _ := json.Marshal(map[string]string{
+	body, _ := json.Marshal(map[string]any{
 		"email": *email, "password": password, "deviceName": *name,
 		"os": runtime.GOOS + "/" + runtime.GOARCH, "agentVersion": version,
+		"capabilities": initialCapabilities(),
 	})
 	base := strings.TrimRight(*server, "/")
 	resp, err := http.Post(base+"/api/agent/register", "application/json", bytes.NewReader(body))
@@ -233,21 +239,27 @@ func status() error {
 // ---------- run ----------
 
 type agent struct {
-	cfg    config
-	log    *slog.Logger
-	http   *http.Client
-	spool  string // files waiting to upload
-	screen *screen
+	cfg           config
+	log           *slog.Logger
+	http          *http.Client
+	spool         string // files waiting to upload
+	maxSpoolBytes int64
+	screen        *screen
 
-	mu        sync.Mutex
-	live      bool
-	shotEvery time.Duration
-	current   window // front window at the last sample
-	events    []event
-	input     map[time.Time]*inputMinute // key presses and clicks per minute, not sent yet
-	presence  []presence                 // sign-in, lock, unlock, sign-out, not sent yet
-	tabs      *tabs                      // websites reported by the browser extension
-	restart   func()                     // stops the agent so supervise starts it again (after an update)
+	spoolMu     sync.Mutex
+	snapMu      sync.Mutex
+	mu          sync.Mutex
+	caps        capability.Report
+	live        bool
+	shotEvery   time.Duration
+	current     window // front window at the last sample
+	open        *event
+	lastLoginAt time.Time
+	events      []event
+	input       map[time.Time]*inputMinute // key presses and clicks per minute, not sent yet
+	presence    []presence                 // sign-in, lock, unlock, sign-out, not sent yet
+	tabs        *tabs                      // websites reported by the browser extension
+	restart     func()                     // stops the agent so supervise starts it again (after an update)
 }
 
 type presence struct {
@@ -258,6 +270,9 @@ type presence struct {
 func (a *agent) note(kind string, at time.Time) {
 	a.mu.Lock()
 	a.presence = append(a.presence, presence{Kind: kind, At: at})
+	if len(a.presence) > maxPendingPresence {
+		a.presence = a.presence[len(a.presence)-maxPendingPresence:]
+	}
 	a.mu.Unlock()
 }
 
@@ -292,8 +307,13 @@ func run(log *slog.Logger) error {
 	defer release()
 	a := &agent{
 		cfg: c, log: log, http: &http.Client{Timeout: 2 * time.Minute},
-		spool: filepath.Join(dir, "spool"), screen: scr, shotEvery: 5 * time.Minute,
-		input: map[time.Time]*inputMinute{}, tabs: newTabs(),
+		spool:         sessionSpoolDir(dir, scr.sessionKey()),
+		maxSpoolBytes: configuredMaxSpoolBytes(),
+		screen:        scr,
+		caps:          initialCapabilities(),
+		shotEvery:     5 * time.Minute,
+		input:         map[time.Time]*inputMinute{},
+		tabs:          newTabs(),
 	}
 	if err := os.MkdirAll(a.spool, 0o700); err != nil {
 		return err
@@ -307,37 +327,61 @@ func run(log *slog.Logger) error {
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	watchParent(stop)
 	ctx, restart := context.WithCancel(sigCtx)
 	defer restart()
 	a.restart = restart
 
+	stopLifecycle, err := scr.startLifecycle(ctx, stop)
+	if err != nil {
+		return err
+	}
+	defer stopLifecycle()
+
+	if err := a.loadSnapshot(); err != nil {
+		log.Warn("could not load pending state snapshot", "error", err)
+	}
+	a.enforceSpoolLimit()
+
 	// The day's start time is the desktop sign-in; the agent starts at sign-in, so its own
-	// start time is the fallback. The server ignores the same sign-in sent again.
+	// start time is the fallback. The server ignores the same sign-in sent again, and
+	// recovering the pending snapshot before noting login deduplicates same-session restarts.
 	signedIn, ok := scr.sessionStart()
 	if !ok {
 		signedIn = time.Now()
 	}
-	a.note("login", signedIn)
-	if scr.locked() {
+	a.noteLogin(signedIn, ok)
+	if scr.attendanceLocked() {
 		a.note("lock", time.Now())
+	}
+	if err := a.checkpointSnapshot(); err != nil {
+		a.log.Warn("checkpoint failed", "error", err)
 	}
 
 	log.Info("agent running", "server", c.Server, "account", c.UserName, "computer", c.DeviceName, "version", version)
 
 	var wg sync.WaitGroup
-	for _, loop := range []func(context.Context){a.heartbeats, a.activity, a.inputCounts, a.screenshots, a.recordings, a.liveFrames, a.uploads, a.serveTabs, a.updates} {
+	for _, loop := range []func(context.Context){a.heartbeats, a.activity, a.inputCounts, a.screenshots, a.recordings, a.liveFrames, a.uploads, a.serveTabs, a.updates, a.checkpoints} {
 		wg.Add(1)
 		go func(f func(context.Context)) { defer wg.Done(); f(ctx) }(loop)
 	}
 	wg.Wait()
-	updating := sigCtx.Err() == nil // stopped by a.restart, not by a signal
+	updating := sigCtx.Err() == nil // stopped by a.restart, not by a signal or parent/tray shutdown
 	if !updating {
 		// Stopping means signing out or shutting down
 		a.note("logout", time.Now())
 	}
+	if err := a.checkpointSnapshot(); err != nil {
+		a.log.Warn("checkpoint failed", "error", err)
+	}
 	// Send what is left, including the minute in progress
-	a.flushInput(context.Background(), true)
-	a.flushActivity(context.Background())
+	flushCtx, cancelFlush := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelFlush()
+	a.flushInput(flushCtx, true)
+	a.flushActivity(flushCtx)
+	if err := a.checkpointSnapshot(); err != nil {
+		a.log.Warn("checkpoint failed", "error", err)
+	}
 	if updating {
 		log.Info("agent stopped to start the new version")
 		return errRestart
@@ -366,7 +410,10 @@ func (a *agent) heartbeats(ctx context.Context) {
 			Live            bool `json:"live"`
 			ScreenshotEvery int  `json:"screenshotEvery"`
 		}
-		if err := a.postJSON(ctx, "/api/agent/heartbeat", nil, &out); err != nil {
+		reqBody := map[string]any{
+			"capabilities": a.capabilities(),
+		}
+		if err := a.postJSON(ctx, "/api/agent/heartbeat", reqBody, &out); err != nil {
 			a.log.Warn("heartbeat failed", "error", err)
 			return
 		}
@@ -386,32 +433,37 @@ func (a *agent) heartbeats(ctx context.Context) {
 func (a *agent) activity(ctx context.Context) {
 	var open *event
 	lastFlush := time.Now()
-	wasLocked := a.screen.locked()
+	wasLocked := a.screen.attendanceLocked()
 	closeOpen := func(now time.Time) {
 		if open == nil {
+			a.mu.Lock()
+			a.open = nil
+			a.mu.Unlock()
 			return
 		}
 		open.Seconds = int(now.Sub(open.StartedAt).Round(time.Second).Seconds())
+		a.mu.Lock()
+		a.open = nil
 		if open.Seconds > 0 {
-			a.mu.Lock()
 			a.events = append(a.events, *open)
-			if len(a.events) > 5000 { // server unreachable for hours: keep the newest
-				a.events = a.events[len(a.events)-5000:]
+			if len(a.events) > maxPendingEvents { // server unreachable for hours: keep the newest
+				a.events = a.events[len(a.events)-maxPendingEvents:]
 			}
-			a.mu.Unlock()
 		}
+		a.mu.Unlock()
 		open = nil
 	}
 	every(ctx, sampleEvery, func() {
 		now := time.Now()
-		locked := a.screen.locked()
+		locked := a.screen.attendanceLocked()
 		if locked != wasLocked {
 			a.note(map[bool]string{true: "lock", false: "unlock"}[locked], now)
 			wasLocked = locked
 		}
+		suspended := a.screen.captureSuspended()
 		win, err := a.screen.activeWindow()
-		if err != nil || locked {
-			closeOpen(now) // locked or nothing in front: not working time
+		if err != nil || locked || suspended {
+			closeOpen(now) // locked, UAC/secure desktop, disconnected, or nothing in front: not working time
 		} else {
 			a.mu.Lock()
 			a.current = win
@@ -424,6 +476,11 @@ func (a *agent) activity(ctx context.Context) {
 				closeOpen(now)
 				open = &event{StartedAt: now, App: win.app, AppName: win.appName, Title: win.title, Domain: domain}
 			}
+			a.mu.Lock()
+			cp := *open
+			cp.Seconds = int(now.Sub(cp.StartedAt).Round(time.Second).Seconds())
+			a.open = &cp
+			a.mu.Unlock()
 		}
 		if now.Sub(lastFlush) >= flushEvery {
 			// Split long stretches at each flush so the server sees activity as it happens
@@ -441,11 +498,11 @@ func (a *agent) activity(ctx context.Context) {
 }
 
 // inputCounts counts key presses and mouse clicks per minute (never which keys), except while
-// the screen is locked, so a lock-screen password is not counted.
+// capture is suspended (screen locked, UAC/secure desktop, disconnected session, or sleep).
 func (a *agent) inputCounts(ctx context.Context) {
 	count := func(keys, clicks int) func() {
 		return func() {
-			if a.screen.locked() {
+			if a.screen.captureSuspended() {
 				return
 			}
 			minute := time.Now().Truncate(time.Minute)
@@ -454,6 +511,7 @@ func (a *agent) inputCounts(ctx context.Context) {
 			if m == nil {
 				m = &inputMinute{Minute: minute}
 				a.input[minute] = m
+				trimInputMapLocked(a.input)
 			}
 			m.Keys += keys
 			m.Clicks += clicks
@@ -466,6 +524,7 @@ func (a *agent) inputCounts(ctx context.Context) {
 			return
 		}
 		if errors.Is(err, errors.ErrUnsupported) {
+			a.setInputCountsCapability(false)
 			a.log.Info("key and click counts are not available on this computer")
 			return
 		}
@@ -483,12 +542,19 @@ func (a *agent) flushInput(ctx context.Context, all bool) {
 	a.mu.Lock()
 	batch := []inputMinute{}
 	for minute, m := range a.input {
-		if minute.Before(now) && len(batch) < 1440 {
+		if minute.Before(now) && len(batch) < maxPendingInputMinutes {
 			batch = append(batch, *m)
 		}
 	}
 	a.mu.Unlock()
 	if len(batch) == 0 {
+		return
+	}
+	sort.Slice(batch, func(i, j int) bool {
+		return batch[i].Minute.Before(batch[j].Minute)
+	})
+	if err := a.checkpointSnapshot(); err != nil {
+		a.log.Warn("persisting pending batch failed; will retry", "error", err)
 		return
 	}
 	if err := a.postJSON(ctx, "/api/agent/input", map[string]any{"minutes": batch}, nil); err != nil {
@@ -500,13 +566,20 @@ func (a *agent) flushInput(ctx context.Context, all bool) {
 		delete(a.input, m.Minute)
 	}
 	a.mu.Unlock()
+	if err := a.checkpointSnapshot(); err != nil {
+		a.log.Warn("checkpoint failed", "error", err)
+	}
 }
 
 func (a *agent) flushPresence(ctx context.Context) {
 	a.mu.Lock()
-	batch := append([]presence(nil), a.presence...)
+	batch := append([]presence(nil), a.presence[:min(len(a.presence), 500)]...)
 	a.mu.Unlock()
 	if len(batch) == 0 {
+		return
+	}
+	if err := a.checkpointSnapshot(); err != nil {
+		a.log.Warn("persisting pending batch failed; will retry", "error", err)
 		return
 	}
 	if err := a.postJSON(ctx, "/api/agent/presence", map[string]any{"events": batch}, nil); err != nil {
@@ -514,20 +587,29 @@ func (a *agent) flushPresence(ctx context.Context) {
 		return
 	}
 	a.mu.Lock()
-	a.presence = a.presence[len(batch):]
+	if len(a.presence) >= len(batch) {
+		a.presence = a.presence[len(batch):]
+	} else {
+		a.presence = nil
+	}
 	a.mu.Unlock()
+	if err := a.checkpointSnapshot(); err != nil {
+		a.log.Warn("checkpoint failed", "error", err)
+	}
 }
 
 func (a *agent) flushActivity(ctx context.Context) {
 	a.flushPresence(ctx)
 	a.flushInput(ctx, false)
 	a.mu.Lock()
-	batch := a.events
-	if len(batch) > 500 {
-		batch = batch[:500]
-	}
+	n := min(len(a.events), 500)
+	batch := append([]event(nil), a.events[:n]...)
 	a.mu.Unlock()
 	if len(batch) == 0 {
+		return
+	}
+	if err := a.checkpointSnapshot(); err != nil {
+		a.log.Warn("persisting pending batch failed; will retry", "error", err)
 		return
 	}
 	if err := a.postJSON(ctx, "/api/agent/activity", map[string]any{"events": batch}, nil); err != nil {
@@ -535,8 +617,15 @@ func (a *agent) flushActivity(ctx context.Context) {
 		return
 	}
 	a.mu.Lock()
-	a.events = a.events[len(batch):]
+	if len(a.events) >= len(batch) {
+		a.events = a.events[len(batch):]
+	} else {
+		a.events = nil
+	}
 	a.mu.Unlock()
+	if err := a.checkpointSnapshot(); err != nil {
+		a.log.Warn("checkpoint failed", "error", err)
+	}
 }
 
 func (a *agent) frontWindow() window {
@@ -547,7 +636,7 @@ func (a *agent) frontWindow() window {
 
 // screenshots saves one into the spool folder every few minutes; uploads() sends it.
 func (a *agent) screenshots(ctx context.Context) {
-	if !canCapture {
+	if !canCapture && !a.capabilities().Screenshots {
 		return
 	}
 	next := time.Now()
@@ -559,7 +648,7 @@ func (a *agent) screenshots(ctx context.Context) {
 		next = time.Now().Add(a.shotEvery)
 		a.mu.Unlock()
 		// No front window yet means the desktop is still starting: the screen is blank
-		if a.screen.locked() || a.frontWindow().appName == "" {
+		if a.screen.captureSuspended() || a.frontWindow().appName == "" {
 			return
 		}
 		at := time.Now()
@@ -570,23 +659,24 @@ func (a *agent) screenshots(ctx context.Context) {
 		}
 		win := a.frontWindow()
 		writeMeta(path, map[string]string{"takenAt": at.Format(time.RFC3339), "app": win.appName, "title": win.title})
+		a.enforceSpoolLimit()
 	})
 }
 
 // recordings records the screen continuously in pieces; each finished piece goes to the spool.
 func (a *agent) recordings(ctx context.Context) {
-	if !canCapture {
+	if !canCapture && !a.capabilities().Recordings {
 		return
 	}
 	for ctx.Err() == nil {
-		if a.screen.locked() {
+		if a.screen.captureSuspended() {
 			sleep(ctx, 10*time.Second)
 			continue
 		}
 		start := time.Now()
 		path := filepath.Join(a.spool, "recording-"+start.UTC().Format("20060102T150405")+".webm")
 		part := path + ".part" // not uploaded until finished
-		err := a.screen.record(ctx, part, pieceLength(), a.screen.locked)
+		err := a.screen.record(ctx, part, pieceLength(), a.screen.captureSuspended)
 		took := time.Since(start)
 		if err != nil {
 			os.Remove(part)
@@ -605,13 +695,14 @@ func (a *agent) recordings(ctx context.Context) {
 			"startedAt": start.Format(time.RFC3339), "seconds": fmt.Sprint(int(took.Seconds())),
 			"app": win.appName, "title": win.title,
 		})
-		os.Rename(part, path)
+		_ = replaceFile(part, path)
+		a.enforceSpoolLimit()
 	}
 }
 
 // liveFrames sends a small screenshot every 2 seconds while a manager is watching.
 func (a *agent) liveFrames(ctx context.Context) {
-	if !canCapture {
+	if !canCapture && !a.capabilities().LiveScreen {
 		return
 	}
 	tmp := filepath.Join(a.spool, "live.jpg.part")
@@ -619,7 +710,7 @@ func (a *agent) liveFrames(ctx context.Context) {
 		a.mu.Lock()
 		live := a.live
 		a.mu.Unlock()
-		if !live || a.screen.locked() {
+		if !live || a.screen.captureSuspended() {
 			return
 		}
 		if err := a.screen.screenshot(ctx, tmp, 1280, 50); err != nil {
@@ -642,6 +733,7 @@ func (a *agent) liveFrames(ctx context.Context) {
 // uploads sends spooled screenshots and recordings, oldest first, retrying on failure.
 func (a *agent) uploads(ctx context.Context) {
 	for ctx.Err() == nil {
+		a.enforceSpoolLimit()
 		files, _ := filepath.Glob(filepath.Join(a.spool, "*"))
 		sort.Strings(files)
 		sent := false
@@ -651,7 +743,10 @@ func (a *agent) uploads(ctx context.Context) {
 					continue
 				}
 				base := strings.TrimSuffix(f, ".uploaded")
-				if err := removeUpload(base); err != nil {
+				a.spoolMu.Lock()
+				cleanupErr := removeUpload(base)
+				a.spoolMu.Unlock()
+				if err := cleanupErr; err != nil {
 					a.log.Warn("upload cleanup failed; will retry", "file", filepath.Base(base), "error", err)
 					break
 				}
@@ -675,6 +770,8 @@ func (a *agent) uploads(ctx context.Context) {
 }
 
 func (a *agent) upload(ctx context.Context, path string) error {
+	a.spoolMu.Lock()
+	defer a.spoolMu.Unlock()
 	if uploaded, err := hasUploadedReceipt(path); err != nil {
 		return err
 	} else if uploaded {
@@ -823,7 +920,7 @@ func (a *agent) postJSON(ctx context.Context, path string, body, out any) error 
 
 func writeMeta(path string, meta map[string]string) {
 	data, _ := json.Marshal(meta)
-	os.WriteFile(path+".json", data, 0o600)
+	_ = atomicWriteFile(path+".json", data, 0o600)
 }
 
 func loadMeta(path string) (map[string]string, error) {

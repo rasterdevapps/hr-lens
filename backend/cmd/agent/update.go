@@ -121,6 +121,11 @@ func (a *agent) update(ctx context.Context, key ed25519.PublicKey, bin string) (
 // replaceVerified writes body next to bin and, only if its SHA-256 is sha, renames it over bin.
 // replaceFile takes care of a running bin.
 func replaceVerified(bin string, body io.Reader, sha string) error {
+	unlock, err := acquireUpdateLock(bin)
+	if err != nil {
+		return fmt.Errorf("another updater may be using this installation: %w", err)
+	}
+	defer unlock()
 	tmp := bin + ".download"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
 	if err != nil {
