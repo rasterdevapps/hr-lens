@@ -327,6 +327,12 @@ func archivePackage(dir string, windows bool) (err error) {
 			break
 		}
 		h.Name = filepath.Base(dir) + "/" + e.Name()
+		// Windows file modes do not carry POSIX executable bits. Archive the
+		// Linux package with target permissions, independent of build host.
+		h.Mode = 0o644
+		if strings.HasSuffix(e.Name(), ".sh") || e.Name() == "hrlens-agent" {
+			h.Mode = 0o755
+		}
 		if err = tw.WriteHeader(h); err != nil {
 			break
 		}
