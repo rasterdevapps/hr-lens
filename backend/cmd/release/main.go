@@ -69,6 +69,9 @@ func main() {
 }
 
 func generateKey() error {
+	if src, err := os.ReadFile(pubKeyFile); err == nil && !bytes.Contains(src, []byte(`const updateKey = ""`)) {
+		return errors.New("an agent public key already exists; recover the matching private key instead of replacing trust")
+	}
 	if _, err := os.Stat(keyFile); err == nil {
 		return fmt.Errorf("%s already exists; a new key would stop installed agents from accepting updates", keyFile)
 	}

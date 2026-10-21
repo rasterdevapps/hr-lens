@@ -13,6 +13,13 @@ async function report(tab) {
     // New Tab, settings and other browser pages have no website
   }
   try {
+    const platform = await chrome.runtime.getPlatformInfo();
+    if (platform.os === 'win') {
+      // Never fall back to a machine-wide TCP port on Windows: the native host
+      // connects only to the agent in this Windows user and sign-in session.
+      await chrome.runtime.sendNativeMessage('com.hrlens.agent', { title: tab.title, host });
+      return;
+    }
     await fetch(AGENT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -35,3 +42,7 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
 });
 chrome.runtime.onStartup.addListener(reportFront);
 chrome.runtime.onInstalled.addListener(reportFront);
+
+// Refresh long-lived front tabs so stale titles cannot be attributed indefinitely.
+chrome.alarms.create('hrlens-front-tab', { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'hrlens-front-tab') reportFront(); });

@@ -65,13 +65,6 @@ func autostartPaths() (bin, entry string, err error) {
 
 func install() error {
 	system := isAdmin()
-	// A personal install tracks the user running it, so it must already be signed in. A
-	// machine-wide install does not sign anyone in: each user does that for themselves later.
-	if !system {
-		if _, _, err := loadConfig(); err != nil {
-			return err
-		}
-	}
 	dir, err := installDir(system)
 	if err != nil {
 		return err
@@ -94,6 +87,9 @@ func install() error {
 		}
 	}
 	bin := filepath.Join(dir, bgExe)
+	if err := setupBrowserHost(bin); err != nil {
+		return fmt.Errorf("register browser host: %w", err)
+	}
 	cmd := exec.Command("reg", "add", runKey(system), "/v", runValue, "/t", "REG_SZ", "/d", `"`+bin+`" run`, "/f")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("adding the sign-in entry: %v: %s", err, out)
@@ -109,7 +105,7 @@ func install() error {
 }
 
 // copyInto copies src over dst. Windows will not overwrite a running program, but it can be
-// renamed out of the way, so the old copy goes to dst.old first.
+// renamed out of the way, so the old copy goes to a unique dst.old.* backup first.
 func copyInto(src, dst string) error {
 	if same, _ := sameFile(src, dst); same {
 		return nil
@@ -124,26 +120,21 @@ func copyInto(src, dst string) error {
 	if err != nil {
 		return err
 	}
+	defer os.Remove(tmp) // no-op after the rename
 	_, err = io.Copy(out, in)
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
-		os.Remove(tmp)
 		return err
 	}
 	return replaceFile(tmp, dst)
 }
 
-// replaceFile renames src over dst, moving a running dst aside first.
+// replaceFile renames src over dst, moving a running dst aside to a unique .old.* backup
+// first, ignoring locked prior backups, and rolling back if moving src into place fails.
 func replaceFile(src, dst string) error {
-	os.Remove(dst + ".old") // left by an earlier replace; fails harmlessly while it still runs
-	if _, err := os.Stat(dst); err == nil {
-		if err := os.Rename(dst, dst+".old"); err != nil {
-			return err
-		}
-	}
-	return os.Rename(src, dst)
+	return replaceWithBackup(src, dst, os.Rename, os.Remove)
 }
 
 func sameFile(a, b string) (bool, error) {
@@ -167,7 +158,10 @@ func uninstall() error {
 			return fmt.Errorf("removing the sign-in entry: %v: %s", err, out)
 		}
 	}
-	fmt.Printf("The agent no longer starts at sign-in. Stop a running copy with:  taskkill /im %s /f\n", bgExe)
+	if err := removeBrowserHost(); err != nil {
+		return err
+	}
+	fmt.Println("The agent no longer starts at sign-in. Use its tray Quit action to stop the running copy gracefully.")
 	return nil
 }
 

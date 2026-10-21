@@ -127,6 +127,8 @@ jobs:
           cache: npm
           cache-dependency-path: screen-management/package-lock.json
       - run: npm ci
+      - name: Browser extension transport tests
+        run: node --test ../backend/browser-extension/background.test.cjs
       - name: Browser unit tests
         run: npm test -- --watch=false --browsers=ChromeHeadless
       - name: Production build

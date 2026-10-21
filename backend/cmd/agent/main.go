@@ -58,6 +58,13 @@ type config struct {
 }
 
 func main() {
+	if handled, err := runNativeHost(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "HR Lens browser host:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	log := slog.New(slog.NewTextHandler(logOutput(), nil))
 	if len(os.Args) < 2 {
 		usage()
@@ -639,6 +646,18 @@ func (a *agent) uploads(ctx context.Context) {
 		sort.Strings(files)
 		sent := false
 		for _, f := range files {
+			if strings.HasSuffix(f, ".uploaded") {
+				if _, err := os.Stat(f); errors.Is(err, os.ErrNotExist) {
+					continue
+				}
+				base := strings.TrimSuffix(f, ".uploaded")
+				if err := removeUpload(base); err != nil {
+					a.log.Warn("upload cleanup failed; will retry", "file", filepath.Base(base), "error", err)
+					break
+				}
+				sent = true
+				continue
+			}
 			ext := filepath.Ext(f)
 			if ext != ".jpg" && ext != ".webm" {
 				continue
@@ -656,7 +675,16 @@ func (a *agent) uploads(ctx context.Context) {
 }
 
 func (a *agent) upload(ctx context.Context, path string) error {
-	meta := readMeta(path)
+	if uploaded, err := hasUploadedReceipt(path); err != nil {
+		return err
+	} else if uploaded {
+		return removeUpload(path)
+	}
+
+	meta, err := loadMeta(path)
+	if err != nil {
+		return err
+	}
 	endpoint, ctype := "/api/agent/screenshots", "image/jpeg"
 	if strings.HasSuffix(path, ".webm") {
 		endpoint, ctype = "/api/agent/recordings", "video/webm"
@@ -665,44 +693,91 @@ func (a *agent) upload(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
 	// Stream the multipart body instead of loading a whole recording into memory
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.Server+endpoint, pr)
+	if err != nil {
+		_ = file.Close()
+		return err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	writeDone := make(chan error, 1)
 	go func() {
-		for k, v := range meta {
-			mw.WriteField(k, v)
+		var err error
+		keys := make([]string, 0, len(meta))
+		for k := range meta {
+			keys = append(keys, k)
 		}
-		h := textproto.MIMEHeader{}
-		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filepath.Base(path)))
-		h.Set("Content-Type", ctype)
-		part, err := mw.CreatePart(h)
+		sort.Strings(keys)
+		for _, k := range keys {
+			if err = mw.WriteField(k, meta[k]); err != nil {
+				break
+			}
+		}
 		if err == nil {
-			_, err = io.Copy(part, file)
+			h := textproto.MIMEHeader{}
+			h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filepath.Base(path)))
+			h.Set("Content-Type", ctype)
+			var part io.Writer
+			if part, err = mw.CreatePart(h); err == nil {
+				_, err = io.Copy(part, file)
+			}
 		}
 		if err == nil {
 			err = mw.Close()
 		}
-		pw.CloseWithError(err)
+		_ = pw.CloseWithError(err)
+		writeDone <- err
 	}()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.Server+endpoint, pr)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	resp, err := a.do(req)
-	if err != nil {
-		return err
+
+	resp, doErr := a.do(req)
+	_ = pr.Close()
+	writeErr := <-writeDone
+	closeErr := file.Close()
+	if doErr != nil {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		return doErr
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusBadRequest {
+	if writeErr != nil && !errors.Is(writeErr, io.ErrClosedPipe) {
+		_ = resp.Body.Close()
+		return writeErr
+	}
+	if closeErr != nil {
+		_ = resp.Body.Close()
+		return closeErr
+	}
+
+	switch resp.StatusCode {
+	case http.StatusBadRequest:
 		// The server will never accept this file: drop it instead of retrying forever
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+		msg, readErr := io.ReadAll(io.LimitReader(resp.Body, 300))
+		bodyCloseErr := resp.Body.Close()
+		if readErr != nil {
+			return readErr
+		}
+		if bodyCloseErr != nil {
+			return bodyCloseErr
+		}
 		a.log.Error("server rejected file; deleting it", "file", filepath.Base(path), "reason", strings.TrimSpace(string(msg)))
-	} else if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("server answered %s", resp.Status)
+		return removeUpload(path)
+	case http.StatusCreated:
+		if err := resp.Body.Close(); err != nil {
+			return err
+		}
+		if err := writeUploadedReceipt(path); err != nil {
+			return err
+		}
+		return removeUpload(path)
+	default:
+		status := resp.Status
+		_ = resp.Body.Close()
+		return fmt.Errorf("server answered %s", status)
 	}
-	os.Remove(path)
-	os.Remove(path + ".json")
-	return nil
 }
 
 // ---------- HTTP ----------
@@ -751,12 +826,72 @@ func writeMeta(path string, meta map[string]string) {
 	os.WriteFile(path+".json", data, 0o600)
 }
 
-func readMeta(path string) map[string]string {
+func loadMeta(path string) (map[string]string, error) {
 	meta := map[string]string{}
-	if data, err := os.ReadFile(path + ".json"); err == nil {
-		json.Unmarshal(data, &meta)
+	data, err := os.ReadFile(path + ".json")
+	if errors.Is(err, os.ErrNotExist) {
+		return meta, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
+
+func readMeta(path string) map[string]string {
+	meta, _ := loadMeta(path)
 	return meta
+}
+
+func uploadReceiptPath(path string) string {
+	return path + ".uploaded"
+}
+
+func hasUploadedReceipt(path string) (bool, error) {
+	_, err := os.Stat(uploadReceiptPath(path))
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
+}
+
+func writeUploadedReceipt(path string) error {
+	f, err := os.OpenFile(uploadReceiptPath(path), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString("uploaded\n"); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+func removeIfExists(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func removeUpload(path string) error {
+	if err := removeIfExists(path); err != nil {
+		return err
+	}
+	if err := removeIfExists(path + ".json"); err != nil {
+		return err
+	}
+	return removeIfExists(uploadReceiptPath(path))
 }
 
 // pieceLength is how long each recording piece runs; HRLENS_RECORDING_SECONDS shortens it for testing.

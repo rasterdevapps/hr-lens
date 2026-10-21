@@ -7,6 +7,6 @@ Go API and desktop agent, PostgreSQL storage, and an Angular web interface.
 - [Server deployment guide](backend/deploy/DEPLOY.md)
 - [Frontend development](screen-management/README.md)
 
-Windows agent source is present, but capture, recordings and input counts are not implemented yet. A successful Windows build does not establish desktop feature support.
+Windows agent development and validation are described in [Windows deployment and acceptance](docs/WINDOWS.md) and [CI checks](docs/CI.md). A successful build or hosted CI run does not replace interactive desktop acceptance.
 
-This repository contains application source only. Local credentials, release signing keys, captured employee data, dependencies, backups and generated deployment archives are excluded. Production releases require the existing private signing key and separately maintained installer packaging inputs; CI must not generate or publish a new production signing identity.
+This repository contains application source only. Local credentials, release signing keys, captured employee data, dependencies, backups and generated deployment archives are excluded. Production releases require the existing private signing key and the tracked installer templates under `backend/packaging`; CI must not generate or publish a new production signing identity.

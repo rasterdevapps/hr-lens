@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -138,6 +139,76 @@ func replaceVerified(bin string, body io.Reader, sha string) error {
 		return errors.New("download does not match the signed checksum; ignoring it")
 	}
 	return replaceFile(tmp, bin)
+}
+
+var backupSeq uint64
+
+// replaceWithBackup renames src over dst, moving an existing dst to a unique .old.* backup
+// first so a running Windows binary can be replaced repeatedly. Prior unlocked backups are
+// cleaned up best-effort, and if moving src into place fails, dst is rolled back from the backup.
+func replaceWithBackup(src, dst string, rename func(string, string) error, remove func(string) error) error {
+	if rename == nil {
+		rename = os.Rename
+	}
+	if remove == nil {
+		remove = os.Remove
+	}
+	cleanupOldBackups(dst, remove)
+
+	var backup string
+	if _, err := os.Stat(dst); err == nil {
+		backup, err = uniqueBackupPath(dst)
+		if err != nil {
+			return err
+		}
+		if err := rename(dst, backup); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	if err := rename(src, dst); err != nil {
+		if backup != "" {
+			if rbErr := rename(backup, dst); rbErr != nil {
+				return fmt.Errorf("%w (rollback failed: %v)", err, rbErr)
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func cleanupOldBackups(dst string, remove func(string) error) {
+	dir := filepath.Dir(dst)
+	base := filepath.Base(dst)
+	_ = remove(dst + ".old") // left by an earlier replace; fails harmlessly while it still runs
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	prefix := base + ".old."
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), prefix) {
+			_ = remove(filepath.Join(dir, e.Name()))
+		}
+	}
+}
+
+func uniqueBackupPath(dst string) (string, error) {
+	ts := time.Now().UTC().UnixNano()
+	for i := 0; i < 1000; i++ {
+		seq := atomic.AddUint64(&backupSeq, 1)
+		candidate := fmt.Sprintf("%s.old.%d-%d", dst, ts, seq)
+		_, err := os.Lstat(candidate)
+		if errors.Is(err, os.ErrNotExist) {
+			return candidate, nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	return "", fmt.Errorf("cannot allocate backup path for %s", dst)
 }
 
 // newer reports whether version a (e.g. "0.10.2") is later than b; "dev" and malformed versions never are.
