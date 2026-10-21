@@ -1,13 +1,12 @@
 package main
 
 import (
-	"context"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestTabHost(t *testing.T) {
@@ -31,15 +30,13 @@ func TestTabHost(t *testing.T) {
 	}
 }
 
-func TestServeTabs(t *testing.T) {
+func TestTabHandler(t *testing.T) {
 	a := &agent{log: slog.New(slog.NewTextHandler(io.Discard, nil)), tabs: newTabs()}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go a.serveTabs(ctx)
-	time.Sleep(200 * time.Millisecond)
+	srv := httptest.NewServer(a.tabHandler())
+	t.Cleanup(srv.Close)
 
 	post := func(origin string) int {
-		req, _ := http.NewRequest("POST", "http://"+tabListenAddr+"/tab", strings.NewReader(`{"title":"Pull request #42 · GitHub","host":"github.com"}`))
+		req, _ := http.NewRequest("POST", srv.URL+"/tab", strings.NewReader(`{"title":"Pull request #42 · GitHub","host":"github.com"}`))
 		if origin != "" {
 			req.Header.Set("Origin", origin)
 		}

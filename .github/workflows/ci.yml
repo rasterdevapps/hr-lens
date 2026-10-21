@@ -1,0 +1,198 @@
+name: Linux and Windows CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Go (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            suffix: ''
+          - os: windows-2022
+            suffix: .exe
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Unit tests
+        run: |
+          mkdir -p ../artifacts
+          go test -count=1 -timeout=3m -json ./... > ../artifacts/go-tests.json
+      - name: Race tests (Linux)
+        if: runner.os == 'Linux'
+        run: go test -race -count=1 -timeout=3m ./...
+      - name: Build native executables without CGO
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go build -trimpath -o ../artifacts/hrlens-agent${{ matrix.suffix }} ./cmd/agent
+          go build -trimpath -o ../artifacts/hrlens-server${{ matrix.suffix }} ./cmd/server
+          go build -trimpath -o ../artifacts/hrlens-release${{ matrix.suffix }} ./cmd/release
+      - name: Build Windows GUI agent
+        if: runner.os == 'Windows'
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -ldflags='-H=windowsgui' -o ../artifacts/hrlens-agentw.exe ./cmd/agent
+      - name: Validate Windows development archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = @('../artifacts/hrlens-agent.exe', '../artifacts/hrlens-agentw.exe', '../artifacts/hrlens-server.exe')
+          Compress-Archive -Path $files -DestinationPath ../artifacts/windows-amd64-dev.zip
+          $expanded = Join-Path $env:RUNNER_TEMP 'hrlens-archive-check'
+          Expand-Archive ../artifacts/windows-amd64-dev.zip -DestinationPath $expanded
+          foreach ($file in $files) {
+            $name = Split-Path $file -Leaf
+            if ((Get-FileHash $file).Hash -ne (Get-FileHash (Join-Path $expanded $name)).Hash) {
+              throw "Archive round-trip failed for $name"
+            }
+          }
+      - name: Upload test logs and development executables
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: backend-${{ matrix.os }}-${{ github.sha }}
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: error
+
+  frontend:
+    name: Angular (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    defaults:
+      run:
+        working-directory: screen-management
+    env:
+      CI: 'true'
+      NG_CLI_ANALYTICS: 'false'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: screen-management/package-lock.json
+      - run: npm ci
+      - name: Browser unit tests
+        run: npm test -- --watch=false --browsers=ChromeHeadless
+      - name: Production build
+        run: npm run build
+      - name: Upload web build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-${{ matrix.os }}-${{ github.sha }}
+          path: screen-management/dist/screen-management/browser/
+          retention-days: 7
+          if-no-files-found: error
+
+  integration:
+    name: PostgreSQL integration (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: hrlens_ci
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: hrlens_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hrlens_ci -d hrlens_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    env:
+      DATABASE_URL: postgres://hrlens_ci:local-ci-only@localhost:5432/hrlens_ci?sslmode=disable
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: CI-test-account-only-2026
+      HTTP_ADDR: 127.0.0.1:18080
+      DATA_DIR: data/ci
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Initialize disposable database and sample fixtures
+        run: |
+          mkdir -p ../artifacts
+          go build -o ../artifacts/hrlens-server ./cmd/server
+          ../artifacts/hrlens-server > ../artifacts/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18080/healthz; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then
+            cat ../artifacts/server.log
+            exit 1
+          fi
+          go run ./cmd/seed
+      - name: Run database integration tests
+        run: go test -count=1 -timeout=5m -tags integration -run Integration -json ./internal/api > ../artifacts/integration-tests.json
+      - name: Require integration tests to run without skips
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          events = [json.loads(line) for line in Path('../artifacts/integration-tests.json').read_text().splitlines()]
+          skipped = [e['Test'] for e in events if e.get('Test') and e.get('Action') == 'skip']
+          passed = [e['Test'] for e in events if e.get('Test') and e.get('Action') == 'pass']
+          if skipped or not passed:
+              raise SystemExit(f'Integration tests did not fully run: passed={passed}, skipped={skipped}')
+          print(f'Passed integration tests: {passed}')
+          PY
+      - name: Upload integration logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: integration-${{ github.sha }}
+          path: |
+            artifacts/integration-tests.json
+            artifacts/server.log
+          retention-days: 7
+          if-no-files-found: warn

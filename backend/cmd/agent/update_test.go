@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -97,7 +98,12 @@ func TestUpdate(t *testing.T) {
 				if got != c.ver || string(data) != "new program" {
 					t.Fatalf("got version %q and program %q, want %s installed", got, data, c.ver)
 				}
-				if info, _ := os.Stat(bin); info.Mode().Perm()&0o100 == 0 {
+				info, err := os.Stat(bin)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Windows represents read/write attributes, not POSIX executable bits.
+				if runtime.GOOS != "windows" && info.Mode().Perm()&0o100 == 0 {
 					t.Fatal("updated program is not executable")
 				}
 			} else if got != "" || string(data) != "old program" {
