@@ -1,0 +1,316 @@
+<div class="hl-intro">
+  <div>
+    <h2>Emails</h2>
+    <p>Reports delivered to inboxes on a schedule: daily, weekly or monthly.</p>
+  </div>
+  <button type="button" class="hl-btn primary" (click)="add()"><mat-icon>add</mat-icon>New report email</button>
+</div>
+
+@if (!mailConfigured()) {
+  <p class="setup" role="note">
+    <mat-icon>mark_email_unread</mat-icon>
+    <span><strong>Sending is not switched on yet.</strong> Schedules are saved now; emails start going out once the mail server
+      (SMTP) settings are added on the server. The preview shows exactly what each email will contain.</span>
+  </p>
+}
+
+<section class="stats" aria-label="Summary">
+  <div class="stat"><span class="badge indigo"><mat-icon>schedule_send</mat-icon></span><span><strong>{{ stats().total }}</strong><small>Report emails</small></span></div>
+  <div class="stat"><span class="badge green"><mat-icon>play_circle</mat-icon></span><span><strong>{{ stats().enabled }}</strong><small>Active schedules</small></span></div>
+  <div class="stat"><span class="badge violet"><mat-icon>alternate_email</mat-icon></span><span><strong>{{ stats().recipients }}</strong><small>Recipients</small></span></div>
+</section>
+
+@if (notice()) {
+  <p class="notice" role="status"><mat-icon>info_outline</mat-icon>{{ notice() }}
+    <button type="button" aria-label="Dismiss" (click)="notice.set('')"><mat-icon>close</mat-icon></button>
+  </p>
+}
+
+<div class="layout">
+  <!-- Schedules -->
+  <section class="list" aria-label="Report emails">
+    @if (loading() && !items().length) {
+      <p class="empty">Loading report emails…</p>
+    } @else if (error()) {
+      <p class="empty failed">{{ error() }} <button type="button" class="link" (click)="load()">Try again</button></p>
+    } @else {
+      @for (r of items(); track r.id) {
+        @let rep = reportOf(r.report);
+        <article class="item" [class.on]="selected()?.id === r.id" [class.paused]="!r.enabled" tabindex="0"
+                 (click)="select(r)" (keydown.enter)="select(r)" [attr.aria-current]="selected()?.id === r.id">
+          <span class="kind" [class]="'kind ' + r.report"><mat-icon>{{ rep.icon }}</mat-icon></span>
+          <div class="body">
+            <div class="row1">
+              <strong>{{ r.name }}</strong>
+              <span class="chip">{{ rep.label }}</span>
+            </div>
+            <p class="when"><mat-icon>event_repeat</mat-icon>{{ scheduleLabel(r) }} <span class="dot">·</span> {{ r.teamName || 'Everyone' }}</p>
+            <div class="row3">
+              <span class="to">
+                @for (a of r.recipients.slice(0, 2); track a) { <span class="addr">{{ a }}</span> }
+                @if (r.recipients.length > 2) { <span class="more">+{{ r.recipients.length - 2 }}</span> }
+              </span>
+              <span class="next" [class.paused]="!r.enabled"><mat-icon>{{ r.enabled ? 'schedule' : 'pause_circle' }}</mat-icon>{{ nextRun(r) }}</span>
+            </div>
+          </div>
+          <div class="tools" (click)="$event.stopPropagation()">
+            <button type="button" class="switch" role="switch" [attr.aria-checked]="r.enabled" [attr.aria-label]="(r.enabled ? 'Pause ' : 'Resume ') + r.name"
+                    [matTooltip]="r.enabled ? 'Pause' : 'Resume'" (click)="toggle(r)"><span></span></button>
+            <button type="button" class="tool" [attr.aria-label]="'Edit ' + r.name" matTooltip="Edit" (click)="edit(r)"><mat-icon>edit_square</mat-icon></button>
+            <button type="button" class="tool del" [attr.aria-label]="'Delete ' + r.name" matTooltip="Delete" (click)="deleteError.set(''); deleting.set(r)"><mat-icon>delete_outline</mat-icon></button>
+          </div>
+        </article>
+      } @empty {
+        <div class="blank">
+          <span class="art"><mat-icon>forward_to_inbox</mat-icon></span>
+          <strong>No report emails yet</strong>
+          <span>Send a daily summary to managers, or a weekly productivity report to the leadership team.</span>
+          <button type="button" class="hl-btn primary" (click)="add()"><mat-icon>add</mat-icon>New report email</button>
+        </div>
+      }
+    }
+  </section>
+
+  <!-- Preview -->
+  <section class="preview" aria-label="Email preview">
+    @if (selected(); as r) {
+      @let rep = reportOf(r.report);
+      @let g = digest();
+      <div class="mail">
+        <header class="mail-head">
+          <div class="meta">
+            <span><b>From</b> HR Lens Reports</span>
+            <span><b>To</b> {{ r.recipients.join(', ') }}</span>
+            <span><b>Subject</b> {{ r.name }} · {{ periodLabel() }}</span>
+          </div>
+          <span class="tag">Preview</span>
+        </header>
+
+        <div class="mail-body">
+          <div class="hero">
+            <span class="hero-icon"><mat-icon>{{ rep.icon }}</mat-icon></span>
+            <div>
+              <h3>{{ rep.label }}</h3>
+              <p>{{ r.teamName || 'Everyone' }} · {{ periodLabel() }}</p>
+            </div>
+          </div>
+
+          @if (preview().loading) {
+            <p class="pv-note">Building the preview from your data…</p>
+          } @else if (preview().error) {
+            <p class="pv-note failed">{{ preview().error }}</p>
+          } @else {
+            @if (r.report !== 'apps_websites') {
+              <div class="tiles">
+                <div><strong>{{ g.present }}<small>/{{ g.people }}</small></strong><span>Present</span></div>
+                <div><strong>{{ g.total }}</strong><span>Total tracked</span></div>
+                <div><strong>{{ g.average }}</strong><span>Per person</span></div>
+                <div><strong>{{ g.score }}%</strong><span>Productive</span></div>
+              </div>
+            }
+
+            @if (r.report === 'daily_summary' || r.report === 'productivity') {
+              @if (g.split; as s) {
+                <div class="split">
+                  <div class="split-bar">
+                    <span class="productive" [style.width.%]="s.productive"></span>
+                    <span class="neutral" [style.width.%]="s.neutral"></span>
+                    <span class="unproductive" [style.width.%]="s.unproductive"></span>
+                  </div>
+                  <div class="split-key">
+                    <span><i class="productive"></i>Productive {{ s.productive.toFixed(0) }}%</span>
+                    <span><i class="neutral"></i>Neutral {{ s.neutral.toFixed(0) }}%</span>
+                    <span><i class="unproductive"></i>Unproductive {{ s.unproductive.toFixed(0) }}%</span>
+                  </div>
+                </div>
+              }
+            }
+
+            @if (r.report !== 'apps_websites') {
+              <h4>{{ r.report === 'attendance' ? 'Attendance' : r.report === 'productivity' ? 'By person' : 'Top people' }}</h4>
+              <table class="pv-table">
+                <thead>
+                  <tr>
+                    <th>Person</th>
+                    @if (r.report === 'attendance') { <th>Days</th><th>Avg start</th> }
+                    <th>Hours</th>
+                    @if (r.report !== 'attendance') { <th>Score</th> }
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (p of (r.report === 'daily_summary' ? g.rows.slice(0, 5) : g.rows.slice(0, 12)); track p.id) {
+                    <tr [class.absent]="!p.days">
+                      <td><span class="pv-person"><span class="av" [style.background]="p.color">{{ p.initials }}</span>{{ p.name }}</span></td>
+                      @if (r.report === 'attendance') { <td>{{ p.days || 'Absent' }}</td><td>{{ p.avgIn }}</td> }
+                      <td>{{ p.hours }}</td>
+                      @if (r.report !== 'attendance') {
+                        <td><span class="score" [class.good]="p.score >= 60" [class.low]="p.working && p.score < 40">{{ p.working ? p.score + '%' : '–' }}</span></td>
+                      }
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="4" class="pv-empty">No one in this report.</td></tr>
+                  }
+                </tbody>
+              </table>
+              @if (g.rows.length > (r.report === 'daily_summary' ? 5 : 12)) {
+                <p class="pv-more">…and {{ g.rows.length - (r.report === 'daily_summary' ? 5 : 12) }} more in the email</p>
+              }
+            }
+
+            @if (r.report === 'daily_summary' || r.report === 'apps_websites') {
+              <h4>Top apps</h4>
+              <ul class="pv-apps">
+                @for (a of (r.report === 'daily_summary' ? g.apps.slice(0, 5) : g.apps); track a.name) {
+                  <li><span>{{ a.name }}</span><b>{{ a.label }}</b><i><em [style.width.%]="a.width"></em></i></li>
+                } @empty {
+                  <li class="pv-empty">No app usage in this period.</li>
+                }
+              </ul>
+            }
+          }
+          <p class="mail-foot">Sent by HR Lens · {{ scheduleLabel(r) }} ({{ r.timeZone }})</p>
+        </div>
+      </div>
+    } @else if (!loading()) {
+      <div class="blank small">
+        <span class="art"><mat-icon>preview</mat-icon></span>
+        <strong>Preview</strong>
+        <span>Pick a report email to see what it will contain.</span>
+      </div>
+    }
+  </section>
+</div>
+
+<!-- Add / edit -->
+@if (draft(); as d) {
+  <div class="hl-backdrop" (click)="draft.set(null)">
+    <form class="hl-dialog wide email-form" role="dialog" aria-modal="true" aria-labelledby="em-title" novalidate
+          (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); save()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>{{ d.id === null ? 'schedule_send' : 'edit_square' }}</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="em-title">{{ d.id === null ? 'New report email' : 'Edit report email' }}</h2>
+          <p>Choose the report, when it goes out and who receives it.</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="draft.set(null)"><mat-icon>close</mat-icon></button>
+      </header>
+
+      <div class="hl-body form-grid">
+        <div class="hl-field full">Report
+          <div class="report-pick" role="radiogroup" aria-label="Report">
+            @for (rp of reports; track rp.key) {
+              <button type="button" role="radio" [attr.aria-checked]="d.report === rp.key" [class.on]="d.report === rp.key" (click)="patch({ report: rp.key })">
+                <span class="kind" [class]="'kind ' + rp.key"><mat-icon>{{ rp.icon }}</mat-icon></span>
+                <span><b>{{ rp.label }}</b><small>{{ rp.hint }}</small></span>
+              </button>
+            }
+          </div>
+        </div>
+
+        <label class="hl-field full">
+          <span>Name <span class="req">*</span></span>
+          <input type="text" placeholder="e.g. Daily summary for managers" [class.invalid]="errors()['name']" [value]="d.name"
+                 (focus)="suggestName()" (input)="patch({ name: $any($event.target).value }, 'name')" (blur)="form.blur('name')">
+          @if (errors()['name']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+        </label>
+
+        <div class="hl-field">How often
+          <div class="hl-seg wide-seg" role="group" aria-label="How often">
+            @for (f of frequencies; track f.key) {
+              <button type="button" [class.active]="d.frequency === f.key" [attr.aria-pressed]="d.frequency === f.key" (click)="patch({ frequency: f.key })">{{ f.label }}</button>
+            }
+          </div>
+        </div>
+
+        <label class="hl-field">
+          <span>Send at <span class="req">*</span></span>
+          <input type="time" [class.invalid]="errors()['sendTime']" [value]="d.sendTime"
+                 (input)="patch({ sendTime: $any($event.target).value }, 'sendTime')" (blur)="form.blur('sendTime')">
+          @if (errors()['sendTime']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+        </label>
+
+        @if (d.frequency === 'weekly') {
+          <div class="hl-field full">On
+            <div class="days" role="radiogroup" aria-label="Day of the week">
+              @for (w of weekdays; track w; let i = $index) {
+                <button type="button" role="radio" [attr.aria-checked]="d.weekday === i" [class.on]="d.weekday === i" (click)="patch({ weekday: i }, 'weekday')">{{ w.slice(0, 3) }}</button>
+              }
+            </div>
+            @if (errors()['weekday']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+          </div>
+        }
+        @if (d.frequency === 'monthly') {
+          <label class="hl-field">
+            <span>Day of the month</span>
+            <select [class.invalid]="errors()['monthDay']" (change)="patch({ monthDay: +$any($event.target).value }, 'monthDay')">
+              @for (n of monthDays; track n) { <option [value]="n" [selected]="d.monthDay === n">{{ n }}</option> }
+            </select>
+            @if (errors()['monthDay']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+          </label>
+        }
+
+        <label class="hl-field">
+          <span>People</span>
+          <select [class.invalid]="errors()['teamId']" (change)="patch({ teamId: $any($event.target).value ? +$any($event.target).value : null }, 'teamId')">
+            <option value="" [selected]="d.teamId === null">Everyone</option>
+            @for (t of teams(); track t.id) { <option [value]="t.id" [selected]="d.teamId === t.id">{{ t.name }}</option> }
+          </select>
+          @if (errors()['teamId']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+        </label>
+
+        <div class="hl-field full">
+          <span>Recipients <span class="req">*</span> <small class="sub">Press Enter or comma after each address</small></span>
+          <div class="recipients" [class.invalid]="errors()['recipients']" (click)="rcpt.focus()">
+            @for (a of d.recipients; track a) {
+              <span class="rchip"><span class="av" [style.background]="'#6366f1'">{{ a[0].toUpperCase() }}</span>{{ a }}
+                <button type="button" [attr.aria-label]="'Remove ' + a" (click)="removeRecipient(a)"><mat-icon>close</mat-icon></button>
+              </span>
+            }
+            <input #rcpt type="text" inputmode="email" autocomplete="off" spellcheck="false" placeholder="name@company.com" aria-label="Add recipient"
+                   [value]="recipientText()" (input)="typeRecipient($any($event.target).value)" (keydown)="recipientKey($event)"
+                   (blur)="addRecipient(); form.blur('recipients')">
+          </div>
+          @if (errors()['recipients']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+        </div>
+
+        <label class="toggle full">
+          <input type="checkbox" [checked]="d.enabled" (change)="patch({ enabled: $any($event.target).checked })">
+          <span class="track" aria-hidden="true"></span>
+          <span>Active — send on this schedule</span>
+        </label>
+
+        @if (formError()) { <p class="hl-alert full" role="alert"><mat-icon>error_outline</mat-icon>{{ formError() }}</p> }
+      </div>
+
+      <footer class="hl-foot">
+        <span class="hl-hint">{{ d.enabled ? 'Next: ' + nextRun(d) : 'Paused' }} · {{ d.timeZone }}</span>
+        <button type="button" class="hl-btn" (click)="draft.set(null)">Cancel</button>
+        <button type="submit" class="hl-btn primary" [disabled]="saving()"><mat-icon>check</mat-icon>{{ saving() ? 'Saving…' : (d.id === null ? 'Schedule email' : 'Save changes') }}</button>
+      </footer>
+    </form>
+  </div>
+}
+
+<!-- Delete -->
+@if (deleting(); as r) {
+  <div class="hl-backdrop" (click)="deleting.set(null)">
+    <div class="hl-dialog danger" role="dialog" aria-modal="true" aria-labelledby="del-title" (click)="$event.stopPropagation()">
+      <header class="hl-head">
+        <span class="hl-badge warn"><mat-icon>delete_outline</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="del-title">Delete {{ r.name }}?</h2>
+          <p>{{ scheduleLabel(r) }} · {{ r.recipients.length }} {{ r.recipients.length === 1 ? 'recipient' : 'recipients' }}</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="deleting.set(null)"><mat-icon>close</mat-icon></button>
+      </header>
+      <div class="hl-body">
+        <p class="del-note">This schedule stops for good. To stop it for a while instead, pause it with its switch.</p>
+        @if (deleteError()) { <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ deleteError() }}</p> }
+      </div>
+      <footer class="hl-foot">
+        <button type="button" class="hl-btn" (click)="deleting.set(null)">Cancel</button>
+        <button type="button" class="hl-btn danger" [disabled]="saving()" (click)="confirmDelete()"><mat-icon>delete_outline</mat-icon>Delete</button>
+      </footer>
+    </div>
+  </div>
+}

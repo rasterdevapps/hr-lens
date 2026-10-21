@@ -1,0 +1,142 @@
+<app-people-panel [(selection)]="selection" />
+
+<section class="main">
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <h2 class="who" [title]="title()">{{ title() }}</h2>
+
+    <input class="picker-input" [matDatepicker]="picker" [max]="today" [value]="date()"
+           (dateChange)="$event.value && date.set($event.value)" tabindex="-1" aria-hidden="true">
+    <mat-datepicker #picker></mat-datepicker>
+
+    <div class="date-nav">
+      <button type="button" class="round" aria-label="Previous day" (click)="shift(-1)"><mat-icon>chevron_left</mat-icon></button>
+      <button type="button" class="date" (click)="picker.open()">
+        {{ date() | date: 'd MMM y' }}
+        <mat-icon>calendar_month</mat-icon>
+      </button>
+      <button type="button" class="round" aria-label="Next day" [disabled]="atEnd()" (click)="shift(1)"><mat-icon>chevron_right</mat-icon></button>
+      <button type="button" class="tz" [matMenuTriggerFor]="zoneMenu" aria-label="Time zone">
+        {{ zone().code }} <mat-icon>expand_more</mat-icon>
+      </button>
+      <mat-menu #zoneMenu="matMenu">
+        @for (z of zones; track z.code) {
+          <button mat-menu-item (click)="zone.set(z)">
+            <mat-icon>{{ zone() === z ? 'radio_button_checked' : 'radio_button_unchecked' }}</mat-icon>
+            <span>{{ z.code }} · {{ z.label }}</span>
+          </button>
+        }
+      </mat-menu>
+    </div>
+
+    <button type="button" class="more" aria-label="More options" [matMenuTriggerFor]="moreMenu"><mat-icon>more_horiz</mat-icon></button>
+    <mat-menu #moreMenu="matMenu" xPosition="before">
+      <button mat-menu-item [disabled]="tab !== 'screenshots'" (click)="newestFirst.set(!newestFirst())">
+        <mat-icon>sort</mat-icon><span>{{ newestFirst() ? 'Oldest first' : 'Newest first' }}</span>
+      </button>
+    </mat-menu>
+  </div>
+
+  <nav class="tabs">
+    @for (t of tabs; track t.key) {
+      <a [routerLink]="t.route" [class.active]="tab === t.key"><mat-icon>{{ t.icon }}</mat-icon>{{ t.label }}</a>
+    }
+  </nav>
+
+  <div class="scroll shots-page">
+    @if (tab === 'screen-recordings') {
+      <app-screen-recordings [members]="members()" [date]="date()" [zone]="zone()" />
+    } @else if (tab === 'live') {
+      <app-live-screen [members]="members()" />
+    } @else if (tab === 'activity-levels') {
+      <app-activity-levels [members]="members()" [date]="date()" [zone]="zone()" />
+    } @else {
+    <div class="controls">
+      @if (members().length > 1) {
+        <div class="members" role="group" aria-label="Team member">
+          @for (e of members(); track e.id) {
+            <button type="button" [class.active]="employee() === e" [attr.aria-pressed]="employee() === e" (click)="pick(e)">{{ e.name }}</button>
+          }
+        </div>
+      }
+      <span class="spacer"></span>
+      <button type="button" class="sort" (click)="newestFirst.set(!newestFirst())"
+              [matTooltip]="newestFirst() ? 'Newest first' : 'Oldest first'" aria-label="Change sort order">
+        <mat-icon [class.flip]="!newestFirst()">sort</mat-icon>
+      </button>
+      <div class="sizes" role="radiogroup" aria-label="Thumbnail size">
+        @for (s of sizes; track s.label) {
+          <button type="button" role="radio" [class.active]="size() === s" [attr.aria-checked]="size() === s" (click)="size.set(s)">
+            <span class="stop"></span>{{ s.label }}
+          </button>
+        }
+      </div>
+    </div>
+
+    @for (g of groups(); track g.label) {
+      <section class="hour">
+        <h3>{{ g.label }}</h3>
+        <div class="grid" [style.--w.px]="size().width">
+          @for (s of g.shots; track s.id) {
+            <button type="button" class="shot" (click)="open(s)" [attr.aria-label]="'Screenshot ' + s.time + ' ' + zone().code + ', ' + s.app">
+              <img class="screen" [src]="s.url" [alt]="'Screenshot at ' + s.time" loading="lazy" decoding="async" width="160" height="90">
+              <span class="caption"><span class="app">{{ s.app }}</span><span>{{ s.time }} {{ zone().code }}</span></span>
+            </button>
+          }
+        </div>
+      </section>
+    } @empty {
+      @if (shots().error) {
+        <div class="placeholder-box error">
+          <mat-icon>error_outline</mat-icon>
+          <span>{{ shots().error }}</span>
+          <button type="button" class="retry" (click)="retry()">Try again</button>
+        </div>
+      } @else if (!shots().loading) {
+        <div class="placeholder-box">
+          <mat-icon>hide_image</mat-icon>
+          <strong>No screenshots for {{ employee().name }} on {{ date() | date: 'd MMM y' }}</strong>
+          <span>They appear here once the HR Lens agent runs on their computer: one every 5 minutes.</span>
+        </div>
+      }
+    }
+    }
+  </div>
+</section>
+
+<!-- Enlarged view -->
+@if (preview(); as p) {
+  <div class="hl-cinema" role="dialog" aria-modal="true" aria-label="Screenshot preview" (click)="close()">
+    <div class="hl-cinema-top" (click)="$event.stopPropagation()">
+      <div class="hl-glass">
+        <span class="hl-avatar"><mat-icon inline>photo_camera</mat-icon></span>
+        <span class="hl-who">
+          <span class="hl-name">{{ employee().name }}</span>
+          <span class="hl-meta">{{ date() | date: 'EEE, d MMM y' }} · {{ p.time }} {{ zone().code }}</span>
+        </span>
+        <span class="hl-chip">{{ p.app }}</span>
+      </div>
+      <button type="button" class="hl-cinema-close" aria-label="Close" (click)="close()"><mat-icon>close</mat-icon></button>
+    </div>
+
+    <!-- Scroll wheel zooms; drag or scroll bars move around when zoomed in -->
+    <div class="hl-stage shot-stage" (click)="$event.stopPropagation()">
+      <div class="viewport" #viewport [class.zoomed]="zoom() > 1" [class.dragging]="dragging"
+           (wheel)="onWheel($event)" (dblclick)="zoom() > 1 ? resetZoom() : zoomBy(1)"
+           (pointerdown)="startDrag($event, viewport)" (pointermove)="drag($event, viewport)"
+           (pointerup)="dragging = false" (pointercancel)="dragging = false">
+        <div class="canvas" [style.width.%]="zoom() * 100">
+          <img class="screen" [src]="p.url" [alt]="'Screenshot at ' + p.time" draggable="false">
+        </div>
+      </div>
+    </div>
+
+    <div class="hl-glass hl-cinema-bottom" role="group" aria-label="Zoom" (click)="$event.stopPropagation()">
+      <button type="button" aria-label="Zoom out" matTooltip="Zoom out (-)" [disabled]="zoom() <= minZoom" (click)="zoomBy(-0.5)"><mat-icon>remove</mat-icon></button>
+      <button type="button" class="level" aria-label="Reset zoom" matTooltip="Reset (0)" (click)="resetZoom()">{{ zoom() * 100 }}%</button>
+      <button type="button" aria-label="Zoom in" matTooltip="Zoom in (+)" [disabled]="zoom() >= maxZoom" (click)="zoomBy(0.5)"><mat-icon>add</mat-icon></button>
+      <span class="sep"></span>
+      <button type="button" aria-label="Fit to screen" matTooltip="Fit (0)" [disabled]="zoom() === 1" (click)="resetZoom()"><mat-icon>fit_screen</mat-icon></button>
+    </div>
+  </div>
+}

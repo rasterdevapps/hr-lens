@@ -1,0 +1,136 @@
+// Layout, toolbar and tab styles come from dashboard.component.scss (see styleUrls)
+$ink: var(--ink);
+$border: var(--border);
+
+.shots-page { padding: 8px 24px 80px; }
+
+// ---------- Sort + size ----------
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 4px 0 12px;
+}
+
+.spacer { flex: 1; }
+
+.members {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+
+  button {
+    height: 32px; padding: 0 14px;
+    border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-size: 0.85rem;
+    &.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-dark); }
+  }
+}
+
+.sort {
+  display: inline-flex; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted);
+  .flip { transform: scaleY(-1); }
+}
+
+.sizes {
+  display: flex;
+
+  button {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    width: 40px; padding: 0; border: 0; background: none;
+    font-size: 0.55rem; line-height: 1;
+
+    // line joining the stops
+    &:not(:first-child)::before {
+      content: ''; position: absolute; top: 4px; right: 50%; width: 100%; height: 1.5px; background: var(--primary);
+    }
+    &.active { font-size: 0.65rem; font-weight: 600; }
+    &.active .stop { background: var(--primary); }
+    &:focus-visible .stop { outline: 2px solid var(--primary); outline-offset: 2px; }
+  }
+  .stop {
+    position: relative; z-index: 1; box-sizing: border-box;
+    width: 9px; height: 9px; border: 1.5px solid var(--primary); border-radius: 50%; background: var(--surface);
+  }
+}
+
+// ---------- Hour groups ----------
+.hour {
+  display: grid;
+  grid-template-columns: 162px minmax(0, 1fr);
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+
+  h3 {
+    margin: 4px 0 0 4px;
+    color: var(--ink);
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--w));
+  gap: 14px;
+}
+
+.shot {
+  display: block;
+  padding: 0;
+  border: 1px solid $border;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  color: $ink;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 150ms ease, transform 150ms ease, border-color 150ms ease;
+
+  &:hover { border-color: var(--primary); box-shadow: 0 8px 20px rgba(79, 70, 229, 0.15); transform: translateY(-2px); }
+  &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+}
+
+.screen { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; background: var(--surface-2); }
+.canvas .screen { object-fit: contain; background: #000; user-select: none; }
+
+.placeholder-box {
+  strong { color: var(--ink); font-weight: 600; }
+  &.error { color: var(--danger); }
+  .retry { padding: 0; border: 0; background: none; color: var(--primary-dark); font: inherit; font-weight: 600; cursor: pointer; }
+}
+
+.caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: clamp(0.6rem, calc(var(--w) / 13), 0.9rem);
+  white-space: nowrap;
+
+  .app { overflow: hidden; color: var(--ink); font-weight: 500; text-overflow: ellipsis; }
+}
+
+.placeholder-box { margin: 16px; }
+
+// ---------- Enlarged view (inside the shared .hl-cinema) ----------
+// Sized so the whole 16:9 image fits between the floating bars at 100%
+.shot-stage { width: min(1600px, 100%, calc((100vh - 160px) * 16 / 9)); }
+.viewport {
+  aspect-ratio: 16 / 9; overflow: auto; background: #000; touch-action: none;
+  &.zoomed { cursor: grab; }
+  &.dragging { cursor: grabbing; user-select: none; }
+}
+
+@media (max-width: 900px) {
+  .hour { grid-template-columns: minmax(0, 1fr); h3 { margin: 8px 8px 8px; } }
+  .grid { padding: 0 8px; }
+}
+

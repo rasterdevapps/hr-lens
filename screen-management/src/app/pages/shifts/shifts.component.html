@@ -1,0 +1,120 @@
+<div class="hl-intro">
+  <div>
+    <h2>Shifts</h2>
+    <p>Working hours that decide who is marked Late on the Attendance page.</p>
+  </div>
+  <button type="button" class="hl-btn primary" (click)="add()"><mat-icon>more_time</mat-icon>Add shift</button>
+</div>
+
+<nav class="hl-tabs">
+  @for (t of tabs; track t.key) {
+    <a [routerLink]="t.route" [class.active]="t.key === 'shifts'"><mat-icon>{{ t.icon }}</mat-icon>{{ t.label }}</a>
+  }
+</nav>
+
+<div class="toolbar">
+  @if (notice()) {
+    <p class="notice" role="status"><mat-icon>info_outline</mat-icon>{{ notice() }}
+      <button type="button" aria-label="Dismiss" (click)="notice.set('')"><mat-icon>close</mat-icon></button>
+    </p>
+  }
+  <span class="spacer"></span>
+  <button type="button" class="icon" aria-label="Help"
+          matTooltip="A person is Late when they first sign in after the shift start plus the grace period. Pick a person's shift in Users; people without one use the default: 9:30 AM, no grace.">
+    <mat-icon>help_outline</mat-icon>
+  </button>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Shift</th>
+        <th>Starts</th>
+        <th>Grace period</th>
+        <th>Late from</th>
+        <th>People</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (s of shifts(); track s.id) {
+        <tr>
+          <td><span class="team"><span class="tile"><mat-icon>schedule</mat-icon></span>{{ s.name }}</span></td>
+          <td>{{ clock12(s.start) }}</td>
+          <td class="muted">{{ s.graceMinutes ? s.graceMinutes + ' min' : 'None' }}</td>
+          <td><span class="late-from">{{ clock12(addMinutes(s.start, s.graceMinutes + 1)) }}</span></td>
+          <td><span class="hl-chip"><mat-icon inline>person</mat-icon>{{ s.members }} {{ s.members === 1 ? 'person' : 'people' }}</span></td>
+          <td class="actions">
+            <button type="button" [attr.aria-label]="'Edit ' + s.name" matTooltip="Edit" (click)="edit(s)">
+              <mat-icon>edit_square</mat-icon>
+            </button>
+            @if (confirmDelete() === s.id) {
+              <button type="button" class="confirm" (click)="remove(s)">Delete?</button>
+            } @else {
+              <button type="button" [attr.aria-label]="'Delete ' + s.name" matTooltip="Delete" (click)="remove(s)">
+                <mat-icon>delete_outline</mat-icon>
+              </button>
+            }
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td class="empty" colspan="6">
+            @if (listError()) {
+              <span class="failed" role="alert">{{ listError() }}</span>
+              <button type="button" class="link" (click)="load()">Try again</button>
+            } @else if (loading()) {
+              Loading…
+            } @else {
+              No shifts yet. Everyone uses the default: 9:30 AM, no grace.
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>
+
+<!-- Add / edit -->
+@if (draft(); as d) {
+  @let errors = form.shown();
+  <div class="hl-backdrop" (click)="cancel()">
+    <form class="hl-dialog" role="dialog" aria-modal="true" aria-labelledby="shift-title" novalidate
+          (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); save()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>{{ d.id === null ? 'more_time' : 'edit' }}</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="shift-title">{{ d.id === null ? 'Add shift' : 'Edit shift' }}</h2>
+          <p>When the day starts, and how many minutes late still count as on time.</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="cancel()"><mat-icon>close</mat-icon></button>
+      </header>
+      <div class="hl-body">
+        <label class="hl-field">Shift name
+          <input type="text" maxlength="100" autofocus placeholder="e.g. Morning 10 AM" [class.invalid]="errors['name']"
+                 [value]="d.name" (input)="set(d, 'name', $any($event.target).value)" (blur)="form.blur('name')">
+          @if (errors['name']; as e) { <span class="hl-error" role="alert"><mat-icon inline>error_outline</mat-icon>{{ e }}</span> }
+        </label>
+        <div class="pair">
+          <label class="hl-field">Start time
+            <input type="time" [class.invalid]="errors['start']" [value]="d.start"
+                   (input)="set(d, 'start', $any($event.target).value)" (blur)="form.blur('start')">
+            @if (errors['start']; as e) { <span class="hl-error" role="alert"><mat-icon inline>error_outline</mat-icon>{{ e }}</span> }
+          </label>
+          <label class="hl-field">Grace period (minutes)
+            <input type="number" min="0" max="240" step="1" inputmode="numeric" [class.invalid]="errors['graceMinutes']" [value]="d.grace"
+                   (input)="set(d, 'grace', $any($event.target).value)" (blur)="form.blur('graceMinutes')">
+            @if (errors['graceMinutes']; as e) { <span class="hl-error" role="alert"><mat-icon inline>error_outline</mat-icon>{{ e }}</span> }
+          </label>
+        </div>
+        @if (preview(d); as p) { <p class="preview"><mat-icon inline>schedule</mat-icon>{{ p }}</p> }
+        @if (formError()) { <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ formError() }}</p> }
+      </div>
+      <footer class="hl-foot">
+        <button type="button" class="hl-btn" (click)="cancel()">Cancel</button>
+        <button type="submit" class="hl-btn primary" [disabled]="saving()"><mat-icon>check</mat-icon>{{ saving() ? 'Saving…' : 'Save shift' }}</button>
+      </footer>
+    </form>
+  </div>
+}

@@ -1,0 +1,45 @@
+<div class="people-tabs" role="tablist">
+  @for (t of tabs; track t) {
+    <button type="button" role="tab" [class.active]="tab() === t" [attr.aria-selected]="tab() === t"
+            (click)="tab.set(t)">{{ t }}</button>
+  }
+</div>
+
+<div role="tabpanel">
+  @if (tab() === 'Employees') {
+    <ul class="tree flat">
+      @for (e of employees; track e.id) {
+        <li>
+          <button type="button" [class.active]="isSelected(e)" (click)="selectEmployee(e)" [title]="e.name">
+            <span class="avatar">{{ initials(e.name) }}<span class="dot" [class.online]="e.online"></span></span>
+            <span class="name">{{ e.name }}</span>
+          </button>
+        </li>
+      }
+    </ul>
+  } @else {
+    @for (t of teams; track t.team.name) {
+      <div class="tree-root">
+        <button type="button" (click)="toggleTeam(t.team.name)" [attr.aria-expanded]="!closedTeams().has(t.team.name)"
+                [attr.aria-label]="'Toggle ' + t.team.name">
+          <mat-icon>{{ closedTeams().has(t.team.name) ? 'arrow_right' : 'arrow_drop_down' }}</mat-icon>
+        </button>
+        <button type="button" [class.active]="isSelected(t.team)" (click)="selectTeam(t.team)" matTooltip="Show whole team">
+          <span>{{ t.team.name }}</span> <small>({{ t.members.length }})</small>
+        </button>
+      </div>
+      @if (!closedTeams().has(t.team.name)) {
+        <ul class="tree">
+          @for (e of t.members; track e.id) {
+            <li>
+              <button type="button" [class.active]="isSelected(e)" (click)="selectEmployee(e)" [title]="e.name">
+                <span class="avatar">{{ initials(e.name) }}<span class="dot" [class.online]="e.online"></span></span>
+                <span class="name">{{ e.name }}</span>
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    }
+  }
+</div>

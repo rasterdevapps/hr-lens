@@ -1,0 +1,200 @@
+<section class="main">
+  <div class="intro">
+    <div>
+      <h2>Productivity rules</h2>
+      <p>Rate each application and website. Changes apply to past activity too, across every page.</p>
+    </div>
+    <button type="button" class="hl-btn primary" (click)="openAdd()"><mat-icon>add</mat-icon>Add new rule</button>
+  </div>
+
+  <nav class="tabs">
+    @for (t of tabs; track t.key) {
+      <a [routerLink]="t.route" [class.active]="t.key === 'configure-apps'"><mat-icon>{{ t.icon }}</mat-icon>{{ t.label }}</a>
+    }
+  </nav>
+
+  <div class="scroll">
+    <!-- Filters -->
+    <div class="filters">
+      <div class="kinds" role="group" aria-label="Show">
+        <button type="button" [class.active]="kind() === 'application'" (click)="setFilter(kind, 'application')"><mat-icon>apps</mat-icon>Applications</button>
+        <button type="button" [class.active]="kind() === 'website'" (click)="setFilter(kind, 'website')"><mat-icon>language</mat-icon>Websites</button>
+      </div>
+
+      <label class="search">
+        <mat-icon>search</mat-icon>
+        <input type="search" [placeholder]="kind() === 'website' ? 'Search websites or categories…' : 'Search applications or categories…'"
+               [value]="search()" (input)="setFilter(search, $any($event.target).value)" aria-label="Search">
+      </label>
+
+      <span class="spacer"></span>
+
+      <label class="select">
+        <span>Category</span>
+        <select [value]="category()" (change)="setFilter(category, $any($event.target).value)">
+          <option value="">All</option>
+          @for (c of categories(); track c) { <option [value]="c" [selected]="c === category()">{{ c }}</option> }
+        </select>
+      </label>
+      <label class="select">
+        <span>Sort</span>
+        <select (change)="setFilter(sort, $any($event.target).value)">
+          @for (s of sorts; track s.value) { <option [value]="s.value" [selected]="s.value === sort()">{{ s.label }}</option> }
+        </select>
+      </label>
+    </div>
+
+    <div class="levels" role="group" aria-label="Productivity">
+      <button type="button" [class.active]="productivity() === ''" (click)="setFilter(productivity, '')">All</button>
+      @for (l of levels; track l.key) {
+        <button type="button" [class.active]="productivity() === l.key" (click)="setFilter(productivity, l.key)">
+          <i [style.background]="l.color"></i>{{ l.label }}
+        </button>
+      }
+    </div>
+
+    <!-- Bulk actions -->
+    @if (selected().size) {
+      <div class="bulk">
+        <strong>{{ selected().size }} selected</strong>
+        <span>Mark as</span>
+        @for (l of levels; track l.key) {
+          <button type="button" [class]="'mark ' + l.key" [disabled]="busy()" (click)="rateSelected(l.key)">
+            <mat-icon>{{ l.icon }}</mat-icon>{{ l.label }}
+          </button>
+        }
+        <button type="button" class="clear" (click)="clearSelection()">Clear</button>
+      </div>
+    }
+
+    @let l = list();
+    <div class="card list" [class.busy]="l.loading">
+      <div class="progress" aria-hidden="true"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="check"><input type="checkbox" [checked]="allSelected()" (change)="toggleAll()" aria-label="Select all on this page"></th>
+              <th>{{ kind() === 'website' ? 'Website' : 'Application' }}</th>
+              <th class="cat">Category</th>
+              <th class="num" matTooltip="Times it came to the front, last 30 days">Hits</th>
+              <th class="num" matTooltip="Time spent by everyone, last 30 days">Time spent</th>
+              <th class="type">Productivity type</th>
+            </tr>
+          </thead>
+          <tbody>
+            @if (l.error) {
+              <tr><td colspan="6" class="state error"><mat-icon>error_outline</mat-icon>{{ l.error }}
+                <button type="button" class="retry" (click)="retry()">Try again</button></td></tr>
+            } @else {
+              @for (r of items(); track r.id) {
+                <tr [class.picked]="selected().has(r.id)">
+                  <td class="check"><input type="checkbox" [checked]="selected().has(r.id)" (change)="toggle(r.id)" [attr.aria-label]="'Select ' + r.name"></td>
+                  <td>
+                    <div class="name">
+                      @let tl = tile(r.name);
+                      <span class="tile" [style.background]="tl.color">{{ tl.letter }}</span>
+                      <span class="text">
+                        <strong [title]="r.name">{{ r.name }}</strong>
+                        @if (r.browser) {
+                          <small class="browser"><mat-icon inline>info_outline</mat-icon>Browser: each website uses its own rule</small>
+                        } @else {
+                          <small>{{ r.detail || (kind() === 'website' ? 'Website' : 'Not seen in 30 days') }}</small>
+                        }
+                      </span>
+                    </div>
+                  </td>
+                  <td class="cat">
+                    <select class="inline" [disabled]="busy()" (change)="recategorize(r, $any($event.target).value)" [attr.aria-label]="'Category of ' + r.name">
+                      @for (c of options(r); track c) { <option [value]="c" [selected]="c === r.category">{{ c }}</option> }
+                    </select>
+                  </td>
+                  <td class="num">{{ r.hits | number }}</td>
+                  <td class="num">{{ duration(r.seconds) }}</td>
+                  <td class="type">
+                    <div class="rate" role="group" [attr.aria-label]="'Productivity of ' + r.name">
+                      @for (lv of levels; track lv.key) {
+                        <button type="button" [class]="lv.key" [class.on]="r.productivity === lv.key" [disabled]="busy()"
+                                [attr.aria-pressed]="r.productivity === lv.key" (click)="rate(r, lv.key)" [matTooltip]="lv.label">
+                          <mat-icon>{{ lv.icon }}</mat-icon><span>{{ lv.label }}</span>
+                        </button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                @if (!l.loading) {
+                  <tr><td colspan="6" class="state"><mat-icon>search_off</mat-icon>
+                    {{ search() || productivity() || category() ? 'Nothing matches these filters' : 'No ' + kind() + 's seen yet' }}</td></tr>
+                }
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (pageRange().total > pageSize) {
+        <div class="pager">
+          <span>{{ pageRange().first | number }}–{{ pageRange().last | number }} of {{ pageRange().total | number }}</span>
+          <button type="button" aria-label="Previous page" [disabled]="page() === 1" (click)="page.set(page() - 1)"><mat-icon>chevron_left</mat-icon></button>
+          <button type="button" aria-label="Next page" [disabled]="pageRange().last >= pageRange().total" (click)="page.set(page() + 1)"><mat-icon>chevron_right</mat-icon></button>
+        </div>
+      } @else if (pageRange().total) {
+        <div class="pager"><span>{{ pageRange().total | number }} {{ kind() }}{{ pageRange().total === 1 ? '' : 's' }}</span></div>
+      }
+    </div>
+  </div>
+</section>
+
+@if (notice(); as n) {
+  <div class="toast" [class.error]="n.error" role="status">
+    <mat-icon>{{ n.error ? 'error_outline' : 'check_circle' }}</mat-icon>{{ n.text }}
+  </div>
+}
+
+<!-- Add new rule -->
+@if (draft(); as d) {
+  <div class="hl-backdrop" (click)="draft.set(null)">
+    <form class="hl-dialog" role="dialog" aria-modal="true" aria-labelledby="rule-title" novalidate
+          (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); addRule()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>rule</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="rule-title">Add new rule</h2>
+          <p>Rate an application or website, even before anyone uses it.</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="draft.set(null)"><mat-icon>close</mat-icon></button>
+      </header>
+      <div class="hl-body rule-form">
+        <div class="kinds wide" role="group" aria-label="Rule for">
+          <button type="button" [class.active]="d.kind === 'application'" (click)="patch({ kind: 'application' })"><mat-icon>apps</mat-icon>Application</button>
+          <button type="button" [class.active]="d.kind === 'website'" (click)="patch({ kind: 'website' })"><mat-icon>language</mat-icon>Website</button>
+        </div>
+        <label class="hl-field">{{ d.kind === 'website' ? 'Website' : 'Application name' }}
+          <input type="text" autofocus [placeholder]="d.kind === 'website' ? 'e.g. github.com' : 'e.g. Visual Studio Code'"
+                 [class.invalid]="draftErrors()['name']" [value]="d.name" (input)="patch({ name: $any($event.target).value })" (blur)="form.blur('name')">
+          @if (draftErrors()['name']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+        </label>
+        <label class="hl-field">Category
+          <input type="text" list="rule-categories" [class.invalid]="draftErrors()['category']" [value]="d.category"
+                 (input)="patch({ category: $any($event.target).value })" (blur)="form.blur('category')">
+          <datalist id="rule-categories">@for (c of categories(); track c) { <option [value]="c"></option> }</datalist>
+          @if (draftErrors()['category']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+        </label>
+        <div class="hl-field">Productivity type
+          <div class="rate big" role="group" aria-label="Productivity type">
+            @for (lv of levels; track lv.key) {
+              <button type="button" [class]="lv.key" [class.on]="d.productivity === lv.key" (click)="patch({ productivity: lv.key })">
+                <mat-icon>{{ lv.icon }}</mat-icon><span>{{ lv.label }}</span>
+              </button>
+            }
+          </div>
+        </div>
+        @if (draftErrors()['form']; as e) { <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ e }}</p> }
+      </div>
+      <footer class="hl-foot">
+        <button type="button" class="hl-btn" (click)="draft.set(null)">Cancel</button>
+        <button type="submit" class="hl-btn primary" [disabled]="busy()"><mat-icon>check</mat-icon>{{ busy() ? 'Saving…' : 'Add rule' }}</button>
+      </footer>
+    </form>
+  </div>
+}

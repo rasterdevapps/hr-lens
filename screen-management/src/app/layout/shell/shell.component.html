@@ -1,0 +1,298 @@
+<div class="shell" [class.collapsed]="collapsed()">
+  <nav class="sidenav" aria-label="Main menu">
+    <div class="brand">
+      <span class="brand-logo"><mat-icon>center_focus_strong</mat-icon></span>
+      @if (!collapsed()) {
+        <span class="brand-text">HR Lens</span>
+      }
+    </div>
+
+    <div class="menu">
+      @for (item of navItems(); track item.label) {
+        @if (item.children) {
+          <div class="group" [class.open]="openGroup() === item.label && !collapsed()">
+            <button type="button" class="nav-item"
+                    [class.active]="isGroupActive(item)"
+                    [attr.aria-expanded]="openGroup() === item.label"
+                    [matTooltip]="collapsed() ? item.label : ''" matTooltipPosition="right"
+                    (click)="toggleGroup(item)">
+              <mat-icon>{{ item.icon }}</mat-icon>
+              @if (!collapsed()) {
+                <span class="label">{{ item.label }}</span>
+                <mat-icon class="chevron">expand_more</mat-icon>
+              }
+            </button>
+            @if (openGroup() === item.label && !collapsed()) {
+              <div class="children">
+                @for (child of item.children; track child.route) {
+                  <a class="child" [routerLink]="child.route" routerLinkActive="active">{{ child.label }}</a>
+                }
+              </div>
+            }
+          </div>
+        } @else {
+          <a class="nav-item" [routerLink]="item.route" routerLinkActive="active"
+             [matTooltip]="collapsed() ? item.label : ''" matTooltipPosition="right">
+            <mat-icon>{{ item.icon }}</mat-icon>
+            @if (!collapsed()) {
+              <span class="label">{{ item.label }}</span>
+            }
+          </a>
+        }
+      }
+    </div>
+
+    <button type="button" class="collapse-btn" (click)="toggle()"
+            [attr.aria-label]="collapsed() ? 'Expand menu' : 'Collapse menu'">
+      <mat-icon>{{ collapsed() ? 'keyboard_double_arrow_right' : 'keyboard_double_arrow_left' }}</mat-icon>
+      @if (!collapsed()) {
+        <span>Collapse</span>
+      }
+    </button>
+  </nav>
+
+  <div class="body">
+    <header class="topbar">
+      <div class="crumbs">
+        @if (section()) {
+          <span class="section">{{ section() }}</span>
+          <mat-icon>chevron_right</mat-icon>
+        }
+        <h1>{{ pageTitle() }}</h1>
+      </div>
+
+      <span class="spacer"></span>
+
+      <button type="button" class="download-btn" (click)="openAgent()">
+        <mat-icon>download</mat-icon>
+        <span>Download Agent</span>
+      </button>
+
+      <button type="button" class="user" [matMenuTriggerFor]="userMenu">
+        <span class="avatar">
+          @if (user()?.hasPhoto) {
+            <img [src]="'/api/profile/photo?v=' + photoVersion()" alt="">
+          } @else {
+            {{ auth.initials() }}
+          }
+        </span>
+        <span class="user-info">
+          <span class="user-name">{{ user()?.name }}</span>
+          <span class="user-role">{{ auth.roleLabel() }}</span>
+        </span>
+        <mat-icon class="caret">expand_more</mat-icon>
+      </button>
+      <mat-menu #userMenu="matMenu" xPosition="before">
+        <div class="menu-note">{{ user()?.email }}</div>
+        @if (auth.role() !== 'user') {
+          <button mat-menu-item routerLink="/profile"><mat-icon>person_outline</mat-icon><span>Profile</span></button>
+          <button mat-menu-item (click)="settingsOpen.set(true)"><mat-icon>tune</mat-icon><span>Settings</span></button>
+        }
+        <button mat-menu-item (click)="openPassword()"><mat-icon>lock_reset</mat-icon><span>Change password</span></button>
+        <button mat-menu-item (click)="signOut()"><mat-icon>logout</mat-icon><span>Sign out</span></button>
+      </mat-menu>
+    </header>
+
+    <div class="progress-slot">
+      @if (loading.busy()) {
+        <div class="progress" role="progressbar" aria-label="Loading"><span></span></div>
+      }
+    </div>
+
+    <main class="page" [class.loading]="loading.pageLoading()" [attr.aria-busy]="loading.busy()">
+      <router-outlet />
+    </main>
+  </div>
+</div>
+
+<!-- Settings -->
+@if (settingsOpen()) {
+  <div class="hl-backdrop" (click)="settingsOpen.set(false)">
+    <div class="hl-dialog settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" (click)="$event.stopPropagation()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>tune</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="settings-title">Settings</h2>
+          <p>Saved in this browser for your next visit.</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="settingsOpen.set(false)"><mat-icon>close</mat-icon></button>
+      </header>
+      <div class="hl-body">
+        <h3 class="settings-section">Appearance</h3>
+        <div class="themes" role="radiogroup" aria-label="Theme">
+          @for (t of themes; track t.mode) {
+            <button type="button" class="theme" role="radio" [attr.aria-checked]="theme.mode() === t.mode"
+                    [class.on]="theme.mode() === t.mode" (click)="theme.set(t.mode)">
+              <span class="preview" [class]="'preview ' + t.mode" aria-hidden="true">
+                <span class="side"></span>
+                <span class="main"><i></i><i></i><i class="short"></i></span>
+              </span>
+              <span class="label"><mat-icon>{{ t.icon }}</mat-icon>{{ t.label }}</span>
+              <small>{{ t.hint }}</small>
+              @if (theme.mode() === t.mode) { <mat-icon class="check">check_circle</mat-icon> }
+            </button>
+          }
+        </div>
+      </div>
+      <footer class="hl-foot">
+        <span class="hl-hint">Now showing the {{ theme.dark() ? 'dark' : 'light' }} theme</span>
+        <button type="button" class="hl-btn primary" (click)="settingsOpen.set(false)">Done</button>
+      </footer>
+    </div>
+  </div>
+}
+
+
+<!-- Change password -->
+<!-- Download agent -->
+@if (agentOpen()) {
+  <div class="hl-backdrop" (click)="agentOpen.set(false)">
+    <div class="hl-dialog agent" role="dialog" aria-modal="true" aria-labelledby="agent-title" (click)="$event.stopPropagation()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>download</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="agent-title">Download HR Lens Agent</h2>
+          <p>Install it on the computer you want to track.</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="agentOpen.set(false)"><mat-icon>close</mat-icon></button>
+      </header>
+
+      <div class="hl-body agent-body">
+        @if (agentStep() === 'os') {
+          <section class="step">
+            <h3><span class="num">1</span>Choose the operating system</h3>
+            <p class="step-text">Pick the operating system of the computer you want to track.</p>
+            <div class="os-cards">
+              @for (c of agentCards; track c.os) {
+                <button type="button" class="os-card" [class.on]="agentOs() === c.os" [class.off]="!agentLoading() && !agentReady()[c.os]" (click)="pickAgent(c.os)">
+                  <span class="os-ico" aria-hidden="true">
+                    @switch (c.os) {
+                      @case ('windows') {
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 5.1 10.4 4v7.3H3V5.1zM11.3 3.9 21 2.5v8.8h-9.7V3.9zM3 12.7h7.4V20L3 18.9v-6.2zm8.3 0H21v8.8l-9.7-1.4v-7.4z"/></svg>
+                      }
+                      @case ('mac') {
+                        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16.4 12.9c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.9-1.4-.15-2.8.85-3.5.85s-1.8-.83-3-.8c-1.5.02-2.9.9-3.7 2.25-1.6 2.75-.4 6.8 1.1 9 .74 1.1 1.6 2.3 2.8 2.26 1.1-.05 1.5-.72 2.9-.72s1.7.72 2.9.7c1.2-.02 2-1.1 2.7-2.2.85-1.26 1.2-2.5 1.2-2.56-.03-.01-2.3-.88-2.3-3.5zM14.2 6.1c.6-.74 1-1.77.9-2.8-.87.04-1.9.58-2.5 1.3-.56.65-1.05 1.7-.92 2.7.97.08 1.96-.5 2.52-1.2z"/></svg>
+                      }
+                      @case ('linux') {
+                        <svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 9l3 2.5L6 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.5 15h5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                      }
+                    }
+                  </span>
+                  <span class="os-name">{{ c.label }}</span>
+                  @if (!agentLoading() && !agentReady()[c.os]) { <span class="os-tag">Coming soon</span> }
+                </button>
+              }
+            </div>
+            @if (agentError()) {
+              <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ agentError() }}</p>
+            } @else if (agentLoading()) {
+              <p class="note"><mat-icon>hourglass_empty</mat-icon>Checking which agents are available…</p>
+            } @else if (!agentReady()[agentOs()]) {
+              <p class="note soon"><mat-icon>hourglass_empty</mat-icon>The {{ cardLabel(agentOs()) }} agent isn't ready yet. Pick one of the other systems.</p>
+            }
+          </section>
+        } @else {
+          <section class="step mode-step">
+            <p class="selected"><span>Selected agent:</span> <code>{{ cardLabel(agentOs()) }}</code></p>
+
+            @switch (agentOs()) {
+              @case ('linux') {
+                <div class="install-steps">
+                  <h4><span class="num">1</span>Install it on the computer (administrator)</h4>
+                  <p class="step-text">Extract the download and run the installer with sudo, once per computer:</p>
+                  <pre class="cmd">tar -xzf hrlens-agent-linux.tar.gz
+cd hrlens-agent-linux
+sudo ./install.sh</pre>
+                  <p class="step-text">It installs the agent for every user of the computer and makes it start at login.</p>
+                </div>
+                <div class="install-steps">
+                  <h4><span class="num">2</span>Each person signs in once</h4>
+                  <p class="step-text">In a terminal on their own desktop (not over SSH), each employee signs this computer in to their own HR Lens account:</p>
+                  <pre class="cmd">/opt/hrlens/hrlens-agent register -email you&#64;company.com
+/opt/hrlens/hrlens-agent run &amp;</pre>
+                  <p class="note"><mat-icon>info</mat-icon>Needs an X11 (Xorg) desktop session — Wayland is not supported. Each person's activity is tracked under their own account.</p>
+                </div>
+              }
+              @case ('windows') {
+                <div class="install-steps">
+                  <h4><span class="num">1</span>Install it on the computer (administrator)</h4>
+                  <p class="step-text">Unzip the download, then right-click <code>install.cmd</code> and choose <strong>Run as administrator</strong>, once per computer. Enter the HR Lens server address when asked.</p>
+                  <p class="step-text">It installs the agent for everyone who signs in to the computer and makes it start at sign-in.</p>
+                </div>
+                <div class="install-steps">
+                  <h4><span class="num">2</span>Each person signs in once</h4>
+                  <p class="step-text">Signed in to Windows as themselves, each employee opens this file and enters their HR Lens email and password:</p>
+                  <pre class="cmd">C:\Program Files\HR Lens\register.cmd</pre>
+                  <p class="note"><mat-icon>info</mat-icon>On Windows the agent tracks apps, windows, sign-in and screen locks. Screenshots, recordings, live screen and key/click counts are not available on Windows yet. Windows may show "Windows protected your PC": choose More info → Run anyway.</p>
+                </div>
+              }
+              @default {
+                <div class="install-steps">
+                  <p class="step-text">Open the downloaded file and follow the installer. Each person signs in with their own HR Lens account, then it starts at every login.</p>
+                </div>
+              }
+            }
+
+            <div class="mode-foot">
+              <button type="button" class="prev" (click)="backToOs()"><mat-icon>chevron_left</mat-icon>Prev</button>
+              <button type="button" class="hl-btn primary" (click)="downloadAgent(agentOs())"><mat-icon>download</mat-icon>Download for {{ cardLabel(agentOs()) }}</button>
+            </div>
+          </section>
+        }
+      </div>
+
+      <footer class="hl-foot">
+        <span class="hl-hint">Signed in as {{ user()?.email }}</span>
+        <button type="button" class="hl-btn" (click)="agentOpen.set(false)">Close</button>
+      </footer>
+    </div>
+  </div>
+}
+
+@if (passwordOpen()) {
+  <div class="hl-backdrop" (click)="closePassword()">
+    <form class="hl-dialog" role="dialog" aria-modal="true" aria-labelledby="pw-title" novalidate
+          (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); savePassword()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>lock_reset</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="pw-title">Change password</h2>
+          <p>{{ user()?.email }}</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="closePassword()"><mat-icon>close</mat-icon></button>
+      </header>
+      @if (passwordDone()) {
+        <div class="hl-body">
+          <p class="pw-done"><mat-icon>check_circle</mat-icon>Your password has been changed. Other devices have been signed out.</p>
+        </div>
+        <footer class="hl-foot">
+          <button type="button" class="hl-btn primary" (click)="closePassword()">Done</button>
+        </footer>
+      } @else {
+        <div class="hl-body pw-fields">
+          <label class="hl-field">Current password
+            <input type="password" autocomplete="current-password" [class.invalid]="pwErrors()['currentPassword']"
+                   [value]="pw.current" (input)="setPw('current', $any($event.target).value)" (blur)="pwForm.blur('currentPassword'); checkCurrent()">
+            @if (pwErrors()['currentPassword']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+          </label>
+          <label class="hl-field">New password
+            <input type="password" autocomplete="new-password" placeholder="At least 8 characters" [class.invalid]="pwErrors()['newPassword']"
+                   [value]="pw.next" (input)="setPw('next', $any($event.target).value)" (blur)="pwForm.blur('newPassword')">
+            @if (pwErrors()['newPassword']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+          </label>
+          <label class="hl-field">Confirm new password
+            <input type="password" autocomplete="new-password" [class.invalid]="pwErrors()['confirm']"
+                   [value]="pw.confirm" (input)="setPw('confirm', $any($event.target).value)" (blur)="pwForm.blur('confirm')">
+            @if (pwErrors()['confirm']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+          </label>
+          @if (pwError()) { <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ pwError() }}</p> }
+        </div>
+        <footer class="hl-foot">
+          <span class="hl-hint">Other devices will be signed out</span>
+          <button type="button" class="hl-btn" (click)="closePassword()">Cancel</button>
+          <button type="submit" class="hl-btn primary" [disabled]="pwSaving()"><mat-icon>check</mat-icon>Change password</button>
+        </footer>
+      }
+    </form>
+  </div>
+}

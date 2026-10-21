@@ -1,0 +1,48 @@
+<div class="page-header">
+  <div>
+    <p>View employee screens in real time</p>
+  </div>
+</div>
+
+<div class="live-layout">
+  <mat-card class="sessions">
+    <mat-card-header><mat-card-title>Active Sessions</mat-card-title></mat-card-header>
+    <mat-nav-list>
+      @for (s of sessions; track s.id) {
+        <a mat-list-item (click)="select(s)" [activated]="selected().id === s.id">
+          <mat-icon matListItemIcon [class]="'dot ' + s.status.toLowerCase()">circle</mat-icon>
+          <span matListItemTitle>{{ s.employee }}</span>
+          <span matListItemLine>{{ s.status }} · {{ s.app }}</span>
+        </a>
+      }
+    </mat-nav-list>
+  </mat-card>
+
+  <mat-card class="viewer">
+    <mat-card-header>
+      <mat-card-title>{{ selected().employee }}</mat-card-title>
+      <mat-card-subtitle>{{ selected().status }} · {{ selected().app }}</mat-card-subtitle>
+      <span class="spacer"></span>
+      <button mat-flat-button [color]="streaming() ? 'warn' : 'primary'" (click)="toggleStream()" [disabled]="selected().status === 'Offline'">
+        <mat-icon>{{ streaming() ? 'stop' : 'play_arrow' }}</mat-icon>
+        {{ streaming() ? 'Stop' : 'Start' }} Stream
+      </button>
+    </mat-card-header>
+    <mat-card-content>
+      <div class="screen" [class.live]="streaming()">
+        @if (streaming()) {
+          <span class="live-badge">● LIVE</span>
+          <mat-icon>desktop_windows</mat-icon>
+          <span>Streaming {{ selected().employee }}'s screen…</span>
+        } @else {
+          <mat-icon>cast</mat-icon>
+          <span>{{ selected().status === 'Offline' ? 'Employee is offline' : 'Press Start Stream to begin' }}</span>
+        }
+      </div>
+    </mat-card-content>
+    <mat-card-actions align="end">
+      <button mat-button [disabled]="!streaming()"><mat-icon>photo_camera</mat-icon> Snapshot</button>
+      <button mat-button [disabled]="!streaming()"><mat-icon>fullscreen</mat-icon> Fullscreen</button>
+    </mat-card-actions>
+  </mat-card>
+</div>

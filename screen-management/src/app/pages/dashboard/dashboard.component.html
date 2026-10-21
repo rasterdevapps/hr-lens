@@ -1,0 +1,266 @@
+<app-people-panel [(selection)]="selection" />
+
+<section class="main">
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <h2 class="who" [title]="title()">{{ title() }}</h2>
+
+    <!-- Pickers stay in the DOM so the range buttons can open them -->
+    <input class="picker-input" [matDatepicker]="picker" [max]="today" [value]="date()"
+           (dateChange)="$event.value && date.set($event.value)" tabindex="-1" aria-hidden="true">
+    <mat-datepicker #picker [startView]="range() === 'Month' ? 'year' : 'month'"
+                    (monthSelected)="monthPicked($event, picker)"></mat-datepicker>
+    <mat-date-range-input class="picker-input" [formGroup]="rangeForm" [rangePicker]="rangePicker" [max]="today" aria-hidden="true">
+      <input matStartDate formControlName="start" tabindex="-1">
+      <input matEndDate formControlName="end" tabindex="-1">
+    </mat-date-range-input>
+    <mat-date-range-picker #rangePicker></mat-date-range-picker>
+
+    @if (tab !== 'heat-maps') {
+      <div class="date-nav">
+        <button type="button" class="round" aria-label="Previous" (click)="shift(-1)"><mat-icon>chevron_left</mat-icon></button>
+        <button type="button" class="date" (click)="openPicker(picker, rangePicker)">
+          {{ periodLabel() }}
+          <mat-icon>calendar_month</mat-icon>
+        </button>
+        <button type="button" class="round" aria-label="Next" [disabled]="atEnd()" (click)="shift(1)"><mat-icon>chevron_right</mat-icon></button>
+        <button type="button" class="tz" [matMenuTriggerFor]="zoneMenu" aria-label="Time zone">
+          {{ zone().code }} <mat-icon>expand_more</mat-icon>
+        </button>
+        <mat-menu #zoneMenu="matMenu">
+          @for (z of zones; track z.code) {
+            <button mat-menu-item (click)="zone.set(z)">
+              <mat-icon>{{ zone() === z ? 'radio_button_checked' : 'radio_button_unchecked' }}</mat-icon>
+              <span>{{ z.code }} · {{ z.label }}</span>
+            </button>
+          }
+        </mat-menu>
+      </div>
+
+      <div class="ranges" role="group" aria-label="Range">
+        @for (r of ranges; track r) {
+          <button type="button" [class.active]="range() === r" [attr.aria-pressed]="range() === r"
+                  (click)="setRange(r, rangePicker)">{{ r }}</button>
+        }
+      </div>
+      <button type="button" class="more" aria-label="More options" [matMenuTriggerFor]="moreMenu"><mat-icon>more_horiz</mat-icon></button>
+      <mat-menu #moreMenu="matMenu" xPosition="before">
+        <button mat-menu-item (click)="exportWorkHours()"><mat-icon>download</mat-icon><span>Export work hours</span></button>
+        <button mat-menu-item (click)="exportSplit()"><mat-icon>download</mat-icon><span>Export productivity split</span></button>
+        <button mat-menu-item (click)="exportMetrics()"><mat-icon>download</mat-icon><span>Export work time metrics</span></button>
+      </mat-menu>
+    }
+  </div>
+
+  <!-- Tabs -->
+  <nav class="tabs">
+    @for (t of tabs; track t.key) {
+      <a [routerLink]="t.route" [class.active]="tab === t.key">
+        <mat-icon>{{ t.icon }}</mat-icon>{{ t.label }}
+      </a>
+    }
+  </nav>
+
+  <div class="scroll">
+    @if (loadError()) {
+      <p class="load-error" role="alert"><mat-icon>wifi_off</mat-icon>{{ loadError() }}</p>
+    }
+    @if (tab === 'attendance') {
+      <app-attendance [members]="members()" [dates]="dates()" [tzShift]="tzShift()" />
+    } @else if (tab === 'heat-maps') {
+      <app-heat-maps [members]="members()" />
+    } @else if (tab !== 'dashboard') {
+      <div class="card">
+        <div class="placeholder-box">
+          <mat-icon>construction</mat-icon>
+          <span>{{ tabLabel }} is coming soon</span>
+        </div>
+      </div>
+    } @else {
+      <!-- Stat tiles -->
+      <div class="stats">
+        @for (s of stats(); track s.tone) {
+          <div class="stat">
+            <div class="stat-label" [matTooltip]="$any(s).hint ?? ''">{{ s.label }}</div>
+            <div class="stat-value" [class]="'stat-value ' + s.tone">{{ s.value }}</div>
+          </div>
+        }
+      </div>
+
+      <div class="grid-2">
+        <!-- Top 5 apps -->
+        <div class="card">
+          <div class="card-head">
+            <h3>Top 5 websites &amp; applications
+              <mat-icon class="info" matTooltip="Most used websites and applications in the selected period">info_outline</mat-icon>
+            </h3>
+          </div>
+          @if (hasData()) {
+            <div class="donut-wrap">
+              <svg class="donut" viewBox="0 0 100 100" role="img" aria-label="Top websites and applications">
+                @for (s of topApps(); track s.label) {
+                  <circle cx="50" cy="50" [attr.r]="donutR" [attr.stroke]="s.color"
+                          [attr.stroke-dasharray]="s.dash" [attr.stroke-dashoffset]="s.offset">
+                    <title>{{ s.label }} {{ hm(s.value) }} ({{ s.pct }}%)</title>
+                  </circle>
+                }
+              </svg>
+              <ul class="legend">
+                @for (s of topApps(); track s.label) {
+                  <li><span class="ring" [style.border-color]="s.color"></span>{{ s.label }} {{ hm(s.value) }}</li>
+                }
+              </ul>
+            </div>
+          } @else {
+            <p class="no-data">No activity in this period</p>
+          }
+        </div>
+
+        <!-- Work hours -->
+        <div class="card">
+          <div class="card-head">
+            <h3>Work Hours (Avg)</h3>
+            <button type="button" class="dl" aria-label="Download work hours" (click)="exportWorkHours()"><mat-icon>download</mat-icon></button>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Name</th><th>Man Days</th><th>Work Hours (Avg)</th></tr></thead>
+              <tbody>
+                @for (r of rows(); track r.name) {
+                  <tr><td>{{ r.name }}</td><td>{{ r.manDays }}</td><td>{{ r.working }}</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Productivity split -->
+        <div class="card">
+          <div class="card-head">
+            <h3>Productivity Split
+              <mat-icon class="info" matTooltip="Days worked: over 8h · 6–8h · under 6h">info_outline</mat-icon>
+            </h3>
+            <button type="button" class="dl" aria-label="Download productivity split" (click)="exportSplit()"><mat-icon>download</mat-icon></button>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Name</th><th>Man Days</th><th>Over Worked</th><th>Healthy</th><th>Under Worked</th></tr></thead>
+              <tbody>
+                @for (r of rows(); track r.name) {
+                  <tr><td>{{ r.name }}</td><td>{{ r.manDays }}</td><td>{{ r.over }}</td><td>{{ r.healthy }}</td><td>{{ r.under }}</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Productive activity -->
+        <div class="card">
+          <div class="card-head"><h3>Productive Activity</h3></div>
+          @if (hasData()) {
+            <div class="donut-wrap">
+              <svg class="donut" viewBox="0 0 100 100" role="img" aria-label="Productive activity">
+                @for (s of activity(); track s.label) {
+                  <circle cx="50" cy="50" [attr.r]="donutR" [attr.stroke]="s.color"
+                          [attr.stroke-dasharray]="s.dash" [attr.stroke-dashoffset]="s.offset">
+                    <title>{{ s.label }} {{ hm(s.value) }} ({{ s.pct }}%)</title>
+                  </circle>
+                }
+              </svg>
+              <ul class="legend">
+                @for (s of activity(); track s.label) {
+                  <li><span class="dash" [style.background]="s.color"></span>{{ s.label }} {{ hm(s.value) }} ({{ s.pct }}%)</li>
+                }
+              </ul>
+            </div>
+          } @else {
+            <p class="no-data">No activity in this period</p>
+          }
+        </div>
+      </div>
+
+      <!-- Work time metrics -->
+      <div class="card">
+        <div class="card-head">
+          <h3>Work Time Metrics</h3>
+          <button type="button" class="dl" aria-label="Download work time metrics" (click)="exportMetrics()"><mat-icon>download</mat-icon></button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Name</th><th>Active Time (Avg)</th><th>Approved Away Time (Avg)</th><th>Idle Hours (Avg)</th></tr></thead>
+            <tbody>
+              @for (r of rows(); track r.name) {
+                <tr><td>{{ r.name }}</td><td>{{ r.working }}</td><td>{{ r.approvedAway }}</td><td>{{ r.idle }}</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Work vs life balance -->
+      <div class="card">
+        <div class="card-head"><h3>Work vs Life Balance</h3></div>
+        <div class="bar-chart" [class.dense]="workChart().dense">
+          <div class="y-axis">
+            @for (t of workChart().ticks; track t) { <span>{{ t }}h</span> }
+          </div>
+          <div class="plot">
+            <div class="expected-line" [style.bottom.%]="workChart().expectedPct"
+                 [style.left.%]="workChart().edge" [style.right.%]="workChart().edge"></div>
+            @for (d of workChart().days; track d.date.getTime()) {
+              <div class="col">
+                <div class="bar" [class.none]="!d.pct" [style.height.%]="d.pct" [matTooltip]="d.tip + ' · ' + d.value + ' worked'"></div>
+                <span class="expected-dot" [style.bottom.%]="workChart().expectedPct"></span>
+              </div>
+            }
+          </div>
+          <div class="x-axis">
+            @for (d of workChart().days; track d.date.getTime()) { <span>{{ d.label }}</span> }
+          </div>
+        </div>
+        <ul class="legend inline">
+          <li><span class="dash expected"></span>Expected Hours</li>
+          <li><span class="dash actual"></span>Actual Hours{{ members().length > 1 ? ' (Avg)' : '' }}</li>
+        </ul>
+      </div>
+
+      <!-- Time away -->
+      <div class="card">
+        <div class="card-head"><h3>Time Away From System Report</h3></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Name</th><th>Man Days</th><th>Away Time (Total)</th><th>Away Time (Avg)</th></tr></thead>
+            <tbody>
+              @for (r of rows(); track r.name) {
+                <tr><td>{{ r.name }}</td><td>{{ r.manDays }}</td><td>{{ r.awayTotal }}</td><td>{{ r.idle }}</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Away Time Report</h3></div>
+        <div class="bar-chart away" [class.dense]="awayChart().dense">
+          <div class="y-axis">
+            @for (t of awayChart().ticks; track t) { <span>{{ t }}h</span> }
+          </div>
+          <div class="plot">
+            @if (awayChart().empty) {
+              <span class="no-data">No away time recorded</span>
+            } @else {
+              @for (d of awayChart().days; track d.date.getTime()) {
+                <div class="col">
+                  <div class="bar" [class.none]="!d.pct" [style.height.%]="d.pct" [matTooltip]="d.tip + ' · ' + d.value + ' away'"></div>
+                </div>
+              }
+            }
+          </div>
+          <div class="x-axis">
+            @for (d of awayChart().days; track d.date.getTime()) { <span>{{ d.label }}</span> }
+          </div>
+        </div>
+      </div>
+    }
+  </div>
+</section>

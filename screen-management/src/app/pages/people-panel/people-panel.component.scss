@@ -1,0 +1,99 @@
+$primary: var(--primary);
+$primary-dark: var(--primary-dark);
+$border: var(--border);
+
+:host {
+  display: block;
+  flex: 0 0 256px;
+  box-sizing: border-box;
+  padding: 16px 12px;
+  overflow-y: auto;
+  border-right: 1px solid $border;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+button { font: inherit; color: inherit; cursor: pointer; }
+
+// Segmented switch: Employees / Teams
+.people-tabs {
+  display: flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--seg-bg);
+
+  button {
+    flex: 1;
+    height: 30px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    &:hover { color: var(--ink); }
+    &.active { background: var(--surface); color: $primary-dark; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12); }
+  }
+}
+
+.tree-root {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 14px;
+  padding: 2px 0;
+  font-size: 0.85rem;
+
+  mat-icon { flex: none; color: var(--muted); }
+  small { color: var(--faint); font-size: 0.75rem; }
+  button {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 6px; border: 0; border-radius: 6px; background: none; font-weight: 600;
+    &:hover { background: var(--surface-2); }
+    &.active { color: $primary-dark; background: var(--primary-soft); }
+    &:focus-visible { outline: 2px solid $primary; }
+  }
+}
+
+.tree {
+  margin: 2px 0 0 14px;
+  padding: 0;
+  list-style: none;
+
+  // Employees tab: plain list, no group header
+  &.flat { margin: 14px 0 0; }
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 40px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 9px;
+    background: none;
+    font-size: 0.875rem;
+    text-align: left;
+    &:hover { background: var(--surface-2); }
+    &.active { background: var(--primary-soft); color: $primary-dark; font-weight: 600; }
+    &.active .avatar { background: $primary; color: #fff; }
+  }
+  .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .avatar {
+    position: relative;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 28px; height: 28px; border-radius: 50%;
+    background: var(--seg-bg); color: var(--muted);
+    font-size: 0.65rem; font-weight: 600; letter-spacing: 0.02em;
+  }
+  .dot {
+    position: absolute; right: -1px; bottom: -1px;
+    width: 9px; height: 9px; border: 2px solid var(--surface); border-radius: 50%; background: var(--border-strong);
+    &.online { background: var(--success); }
+  }
+}
+
+@media (max-width: 900px) {
+  :host { flex: none; border-right: 0; border-bottom: 1px solid $border; }
+}

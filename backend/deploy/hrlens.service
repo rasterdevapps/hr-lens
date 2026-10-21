@@ -1,0 +1,26 @@
+[Unit]
+Description=HR Lens server (API + web app)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The user that owns /opt/hrlens-server and the data directory (create with: sudo useradd -r -s /usr/sbin/nologin hrlens)
+User=hrlens
+Group=hrlens
+WorkingDirectory=/opt/hrlens-server
+EnvironmentFile=/opt/hrlens-server/.env
+ExecStart=/opt/hrlens-server/hrlens-server
+Restart=always
+RestartSec=3
+# Let the server bind :80/:443 directly only if you run without a reverse proxy; with Caddy/Cloudflare it binds :8080 and needs no capability.
+# AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+ReadWritePaths=/opt/hrlens-server /var/lib/hrlens
+
+[Install]
+WantedBy=multi-user.target

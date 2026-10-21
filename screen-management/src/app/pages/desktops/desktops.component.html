@@ -1,0 +1,165 @@
+<div class="hl-intro">
+  <div>
+    <h2>Desktops</h2>
+    <p>Every computer running the HR Lens agent, who it belongs to and whether it is reporting.</p>
+  </div>
+  @if (latestLabel()) {
+    <span class="latest"><mat-icon>new_releases</mat-icon>Latest agent: {{ latestLabel() }}</span>
+  }
+</div>
+
+@if (showing() === 'active') {
+  <section class="stats" aria-label="Summary">
+    <button type="button" class="stat" [class.on]="filter() === 'all'" (click)="filter.set('all')">
+      <span class="badge indigo"><mat-icon>devices</mat-icon></span>
+      <span><strong>{{ stats().total }}</strong><small>Computers · {{ stats().people }} {{ stats().people === 1 ? 'person' : 'people' }}</small></span>
+    </button>
+    <button type="button" class="stat" [class.on]="filter() === 'online'" (click)="filter.set('online')">
+      <span class="badge green"><mat-icon>wifi</mat-icon></span>
+      <span><strong>{{ stats().online }}</strong><small>Online now</small></span>
+    </button>
+    <button type="button" class="stat" [class.on]="filter() === 'outdated'" (click)="filter.set('outdated')">
+      <span class="badge amber"><mat-icon>system_update_alt</mat-icon></span>
+      <span><strong>{{ stats().outdated }}</strong><small>Need an agent update</small></span>
+    </button>
+    <button type="button" class="stat" [class.on]="filter() === 'silent'" (click)="filter.set('silent')">
+      <span class="badge red"><mat-icon>signal_wifi_off</mat-icon></span>
+      <span><strong>{{ stats().silent }}</strong><small>Silent for 7+ days</small></span>
+    </button>
+  </section>
+}
+
+<div class="toolbar">
+  <div class="hl-seg" role="group" aria-label="Computers">
+    <button type="button" [class.active]="showing() === 'active'" [attr.aria-pressed]="showing() === 'active'" (click)="show('active')">Active</button>
+    <button type="button" [class.active]="showing() === 'removed'" [attr.aria-pressed]="showing() === 'removed'" (click)="show('removed')">Removed</button>
+  </div>
+  @if (showing() === 'active') {
+    <div class="filters" role="group" aria-label="Status">
+      @for (f of filters; track f.key) {
+        <button type="button" class="hl-chip" [class.on]="filter() === f.key" [attr.aria-pressed]="filter() === f.key" (click)="filter.set(f.key)">{{ f.label }}</button>
+      }
+    </div>
+  }
+  @if (notice()) {
+    <p class="notice" role="status"><mat-icon>info_outline</mat-icon>{{ notice() }}
+      <button type="button" aria-label="Dismiss" (click)="notice.set('')"><mat-icon>close</mat-icon></button>
+    </p>
+  }
+  <span class="spacer"></span>
+  <label class="hl-search">
+    <mat-icon>search</mat-icon>
+    <input type="search" placeholder="Search computer, person, team" [value]="search()" (input)="search.set($any($event.target).value)">
+  </label>
+  <button type="button" class="icon" aria-label="Refresh" matTooltip="Refresh (also every 30 seconds)" (click)="load()"><mat-icon>refresh</mat-icon></button>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Computer</th>
+        <th>Person</th>
+        <th>Status</th>
+        <th>Agent</th>
+        <th>Registered</th>
+        @if (showing() === 'active') { <th><span class="sr">Actions</span></th> }
+      </tr>
+    </thead>
+    <tbody>
+      @for (x of visible(); track x.d.id) {
+        <tr>
+          <td>
+            <span class="pc">
+              <span class="pc-icon" [class.on]="x.d.online"><mat-icon>{{ x.osIcon }}</mat-icon></span>
+              <span class="stack"><strong>{{ x.d.name }}</strong><small>{{ x.osLabel }}</small></span>
+            </span>
+          </td>
+          <td>
+            <span class="person">
+              <span class="avatar" [style.background]="x.color">{{ x.initials }}</span>
+              <span class="stack"><strong>{{ x.d.user.name }}</strong><small>{{ x.d.user.team || 'No team' }} · {{ x.d.user.email }}</small></span>
+            </span>
+          </td>
+          <td>
+            @if (x.d.revokedAt) {
+              <span class="state removed"><mat-icon>block</mat-icon>Removed {{ x.d.revokedAt | date: 'MMM d, y' }}</span>
+            } @else if (x.d.online) {
+              <span class="state online"><i></i>Online</span>
+            } @else {
+              <span class="state" [class.silent]="x.silent" [matTooltip]="x.d.lastSeenAt ? (x.d.lastSeenAt | date: 'MMM d, y, HH:mm') : ''">
+                <i></i>{{ x.d.lastSeenAt ? 'Seen ' + x.seen.toLowerCase() : 'Never connected' }}
+              </span>
+            }
+          </td>
+          <td>
+            <span class="version">v{{ x.d.agentVersion || '?' }}</span>
+            @if (x.outdated) {
+              <span class="update" [matTooltip]="'Installs v' + x.newest + ' by itself within an hour of being online'"><mat-icon>arrow_upward</mat-icon>v{{ x.newest }}</span>
+            } @else if (x.newest && !x.d.revokedAt) {
+              <span class="current"><mat-icon>check</mat-icon>Up to date</span>
+            }
+          </td>
+          <td class="muted">{{ x.d.createdAt | date: 'MMM d, y' }}</td>
+          @if (showing() === 'active') {
+            <td class="actions">
+              <button type="button" [attr.aria-label]="'Remove ' + x.d.name" matTooltip="Remove computer" (click)="askRemove(x.d)">
+                <mat-icon>delete_outline</mat-icon>
+              </button>
+            </td>
+          }
+        </tr>
+      } @empty {
+        <tr>
+          <td class="empty" [attr.colspan]="showing() === 'active' ? 6 : 5">
+            @if (loading()) {
+              Loading computers…
+            } @else if (error()) {
+              <span class="failed">{{ error() }}</span><button type="button" class="link" (click)="load()">Try again</button>
+            } @else if (list().items.length) {
+              No computers match. <button type="button" class="link" (click)="filter.set('all'); search.set('')">Show all</button>
+            } @else if (showing() === 'active') {
+              <span class="empty-art"><mat-icon>devices_other</mat-icon></span>
+              <strong>No computers yet</strong>
+              <span>A computer appears here once someone signs in to the HR Lens agent on it.</span>
+            } @else {
+              No removed computers.
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>
+
+@if (error() && list().items.length) {
+  <p class="stale" role="alert"><mat-icon>error_outline</mat-icon>{{ error() }} Showing the last list.</p>
+}
+
+<!-- Remove -->
+@if (removing(); as d) {
+  <div class="hl-backdrop" (click)="removing.set(null)">
+    <div class="hl-dialog danger" role="dialog" aria-modal="true" aria-labelledby="rm-title" (click)="$event.stopPropagation()">
+      <header class="hl-head">
+        <span class="hl-badge warn"><mat-icon>delete_outline</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="rm-title">Remove {{ d.name }}?</h2>
+          <p>{{ d.user.name }} · {{ d.os }}</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="removing.set(null)"><mat-icon>close</mat-icon></button>
+      </header>
+      <div class="hl-body">
+        <ul class="consequences">
+          <li><mat-icon>block</mat-icon>The agent on this computer stops being accepted straight away.</li>
+          <li><mat-icon>history</mat-icon>Screenshots, recordings and activity already received are kept.</li>
+          <li><mat-icon>login</mat-icon>To track it again, sign in to the agent on that computer once more.</li>
+        </ul>
+        @if (removeError()) { <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ removeError() }}</p> }
+      </div>
+      <footer class="hl-foot">
+        <button type="button" class="hl-btn" (click)="removing.set(null)">Cancel</button>
+        <button type="button" class="hl-btn danger" [disabled]="busy()" (click)="remove()"><mat-icon>delete_outline</mat-icon>{{ busy() ? 'Removing…' : 'Remove computer' }}</button>
+      </footer>
+    </div>
+  </div>
+}

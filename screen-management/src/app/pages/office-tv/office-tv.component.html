@@ -1,0 +1,162 @@
+<div class="tv" [class.full]="fullscreen()">
+  <!-- Header -->
+  <header class="top">
+    <div class="brand">
+      <span class="logo"><mat-icon>tv</mat-icon></span>
+      <div>
+        <h2>Office TV</h2>
+        <p>{{ dateLabel() }}</p>
+      </div>
+    </div>
+    <div class="time" aria-label="Time in India">
+      <span class="hhmm">{{ clock() }}</span><span class="ss">{{ seconds() }}</span>
+      <small>IST</small>
+    </div>
+    <div class="controls">
+      <label class="team-pick">
+        <mat-icon>groups</mat-icon>
+        <select aria-label="Team" (change)="team.set($any($event.target).value)">
+          <option value="" [selected]="team() === ''">Everyone</option>
+          @for (t of teams(); track t) { <option [value]="t" [selected]="team() === t">{{ t }}</option> }
+        </select>
+      </label>
+      <span class="live" [class.stale]="error()" [matTooltip]="error() || 'Refreshes every minute'">
+        <i></i>{{ error() ? 'Offline' : 'Live' }} · {{ updatedLabel() }}
+      </span>
+      <button type="button" class="ctl" (click)="toggleFullscreen()" [attr.aria-label]="fullscreen() ? 'Exit full screen' : 'Full screen'"
+              [matTooltip]="fullscreen() ? 'Exit full screen' : 'Full screen for the office TV'">
+        <mat-icon>{{ fullscreen() ? 'fullscreen_exit' : 'fullscreen' }}</mat-icon>
+      </button>
+    </div>
+  </header>
+
+  <!-- Headline numbers -->
+  <section class="kpis" aria-label="Today">
+    <div class="kpi working">
+      <mat-icon>bolt</mat-icon>
+      <strong>{{ kpis().working }}</strong><span>Working now</span>
+    </div>
+    <div class="kpi idle">
+      <mat-icon>coffee</mat-icon>
+      <strong>{{ kpis().idle }}</strong><span>Idle</span>
+    </div>
+    <div class="kpi present">
+      <mat-icon>how_to_reg</mat-icon>
+      <strong>{{ kpis().present }}<small>/{{ kpis().people }}</small></strong><span>Present today</span>
+    </div>
+    <div class="kpi hours">
+      <mat-icon>schedule</mat-icon>
+      <strong>{{ kpis().hours }}</strong><span>Tracked · avg {{ kpis().average }}</span>
+    </div>
+    <div class="kpi score">
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <circle class="track" cx="18" cy="18" r="15.9" />
+        <circle class="fill" cx="18" cy="18" r="15.9" [attr.stroke-dasharray]="kpis().productivity + ' 100'" />
+      </svg>
+      <strong>{{ kpis().productivity }}%</strong><span>Productive</span>
+    </div>
+  </section>
+
+  <div class="main">
+    <!-- People -->
+    <section class="panel board" aria-label="People">
+      <header>
+        <h3><mat-icon>dashboard</mat-icon>Team board</h3>
+        <span class="legend">
+          <span><i class="working"></i>Working</span><span><i class="idle"></i>Idle</span>
+          <span><i class="left"></i>Signed off</span><span><i class="absent"></i>Not started</span>
+        </span>
+      </header>
+      @if (loading()) {
+        <p class="placeholder">Loading today's board…</p>
+      } @else {
+        <div class="cards">
+          @for (p of board(); track p.id) {
+            <article class="card" [class]="'card ' + p.status">
+              <div class="who">
+                <span class="avatar" [style.background]="p.color">{{ p.initials }}<i></i></span>
+                <div class="names">
+                  <strong>{{ p.name }}</strong>
+                  <small>{{ p.team || 'No team' }}</small>
+                </div>
+                <span class="pill">{{ p.statusLabel }}</span>
+              </div>
+              @if (p.working) {
+                <div class="nums">
+                  <span><small>In</small>{{ p.inTime }}</span>
+                  <span><small>Worked</small>{{ p.workingLabel }}</span>
+                  <span><small>Score</small>{{ p.score }}%</span>
+                </div>
+                @if (p.share; as s) {
+                  <div class="bar" [attr.aria-label]="p.score + '% productive'">
+                    <span class="productive" [style.width.%]="s.productive"></span>
+                    <span class="neutral" [style.width.%]="s.neutral"></span>
+                    <span class="unproductive" [style.width.%]="s.unproductive"></span>
+                  </div>
+                }
+                <p class="app">
+                  <mat-icon>{{ p.status === 'working' ? 'play_circle' : 'history' }}</mat-icon>
+                  {{ p.status === 'working' ? 'Mostly in' : 'Last active ' + p.lastSeen + ' · mostly' }} {{ p.topApp }}
+                </p>
+              } @else {
+                <p class="waiting"><mat-icon>hourglass_empty</mat-icon>No activity yet today</p>
+              }
+            </article>
+          } @empty {
+            <p class="placeholder">No one to show{{ team() ? ' in ' + team() : '' }}.</p>
+          }
+        </div>
+      }
+    </section>
+
+    <aside class="side">
+      <!-- Leaderboard -->
+      <section class="panel">
+        <header><h3><mat-icon>emoji_events</mat-icon>Top performers</h3><small>Productive time</small></header>
+        <ol class="leaders">
+          @for (p of leaders(); track p.id; let i = $index) {
+            <li>
+              <span class="rank" [class]="'rank r' + (i + 1)">{{ i + 1 }}</span>
+              <span class="avatar sm" [style.background]="p.color">{{ p.initials }}</span>
+              <span class="lname">{{ p.name }}<small>{{ p.score }}% productive</small></span>
+              <strong>{{ p.productiveLabel }}</strong>
+            </li>
+          } @empty {
+            <li class="none">Nobody has productive time yet today.</li>
+          }
+        </ol>
+      </section>
+
+      <!-- Apps -->
+      <section class="panel">
+        <header><h3><mat-icon>apps</mat-icon>Top apps today</h3></header>
+        <ul class="apps">
+          @for (a of apps(); track a.name) {
+            <li>
+              <span class="aname">{{ a.name }}</span><strong>{{ a.label }}</strong>
+              <span class="track"><span [style.width.%]="a.width"></span></span>
+            </li>
+          } @empty {
+            <li class="none">No app usage yet today.</li>
+          }
+        </ul>
+      </section>
+
+      <!-- Teams -->
+      @if (!team()) {
+        <section class="panel">
+          <header><h3><mat-icon>groups</mat-icon>Teams</h3><small>Present · productive</small></header>
+          <ul class="teams">
+            @for (t of teamRows(); track t.name) {
+              <li>
+                <span class="tname">{{ t.name }}</span>
+                <span class="tcount">{{ t.present }}/{{ t.total }}</span>
+                <span class="tscore" [class.good]="t.score >= 60" [class.low]="t.working && t.score < 40">{{ t.working ? t.score + '%' : '–' }}</span>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    </aside>
+  </div>
+</div>

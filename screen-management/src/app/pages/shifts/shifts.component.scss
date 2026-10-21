@@ -1,0 +1,29 @@
+// Page, toolbar and table styles come from teams.component.scss (see styleUrls)
+th:first-child, td:first-child { width: 30%; }
+
+.tile {
+  background: var(--primary-soft); color: var(--primary-dark); box-shadow: none;
+  mat-icon { font-size: 18px; width: 18px; height: 18px; }
+}
+
+.late-from { color: var(--danger); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.actions .confirm {
+  padding: 5px 10px; border: 0; border-radius: 8px;
+  background: var(--danger-soft); color: var(--danger); font-size: 0.8rem; font-weight: 600;
+  &:hover { background: var(--danger); color: #fff; }
+}
+
+// The shared popup body has no spacing between fields
+.hl-body { display: flex; flex-direction: column; gap: 18px; }
+.hl-body .hl-alert { margin: 0; }
+
+.pair { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 18px 14px; }
+@media (max-width: 520px) { .pair { grid-template-columns: 1fr; } }
+
+.preview {
+  display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 12px;
+  border-radius: 11px; background: var(--primary-tint);
+  color: var(--muted); font-size: 0.85rem;
+  mat-icon { color: var(--primary); }
+}

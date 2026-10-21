@@ -1,0 +1,179 @@
+<app-people-panel [(selection)]="selection" />
+
+<section class="main">
+  <app-period-toolbar [period]="period" [title]="title()" />
+
+  <!-- Tabs -->
+  <nav class="tabs">
+    @for (t of tabs; track t.key) {
+      <a [routerLink]="t.route" [class.active]="tab === t.key"><mat-icon>{{ t.icon }}</mat-icon>{{ t.label }}</a>
+    }
+  </nav>
+
+  <div class="scroll">
+    @if (!detailed) {
+      <!-- Summary strip -->
+      @if (summary().data?.totals; as t) {
+        <div class="overview">
+          <div class="total">
+            <span class="label">Total time</span>
+            <span class="value">{{ duration(t.seconds) }}</span>
+            @if (topItem(); as top) {
+              <span class="top">Most used: <strong>{{ top.name }}</strong></span>
+            }
+          </div>
+          <div class="split">
+            <div class="bar" role="img" aria-label="Productivity split">
+              @for (s of split(); track s.key) {
+                <span [class]="s.key" [style.width.%]="s.pct" [matTooltip]="s.label + ' · ' + duration(s.seconds)"></span>
+              }
+            </div>
+            <ul class="keys">
+              @for (s of split(); track s.key) {
+                <li><i [class]="s.key"></i>{{ s.label }} <strong>{{ s.pct | number: '1.0-0' }}%</strong><span>{{ duration(s.seconds) }}</span></li>
+              }
+            </ul>
+          </div>
+        </div>
+      }
+    }
+
+    <!-- Search and productivity filter -->
+    <div class="filters">
+      <label class="search">
+        <mat-icon>search</mat-icon>
+        <input type="search" [placeholder]="'Search ' + current.plural + '…'"
+               [value]="search()" (input)="setSearch($any($event.target).value)" aria-label="Search">
+      </label>
+      <div class="levels" role="group" aria-label="Productivity">
+        @for (l of levels; track l.value) {
+          <button type="button" [class]="l.value || 'all'" [class.active]="productivity() === l.value"
+                  [attr.aria-pressed]="productivity() === l.value" (click)="setProductivity(l.value)">
+            @if (l.value) { <i></i> }{{ l.label }}
+          </button>
+        }
+      </div>
+    </div>
+
+    <div class="card list" [class.busy]="detailed ? events().loading : summary().loading">
+      <div class="progress" aria-hidden="true"></div>
+
+      @if (!detailed) {
+        @let s = summary();
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="prod-col">Productivity</th>
+                <th>{{ current.column }}</th>
+                @if (tab !== 'by-categories') { <th>Category</th> }
+                <th class="num">Duration</th>
+                <th class="pct-col">Percentage</th>
+              </tr>
+            </thead>
+            <tbody>
+              @if (s.error) {
+                <tr><td [attr.colspan]="tab === 'by-categories' ? 4 : 5" class="state error"><mat-icon>error_outline</mat-icon>{{ s.error }}
+                  <button type="button" class="retry" (click)="retry()">Try again</button></td></tr>
+              } @else {
+                @for (it of s.data?.items ?? []; track it.name) {
+                  <tr>
+                    <td class="prod-col"><span class="pill" [class]="'pill ' + it.productivity"><mat-icon>{{ icon(it.productivity) }}</mat-icon>{{ it.productivity }}</span></td>
+                    <td>
+                      <div class="name">
+                        @let tl = tile(it.name);
+                        <span class="tile" [style.background]="tl.color">{{ tl.letter }}</span>
+                        <span class="text">
+                          <strong [title]="it.name">{{ it.name }}</strong>
+                          <small>{{ tab === 'by-categories' ? it.detail + (it.detail === '1' ? ' application' : ' applications') : it.detail }}</small>
+                        </span>
+                      </div>
+                    </td>
+                    @if (tab !== 'by-categories') { <td class="muted">{{ it.category }}</td> }
+                    <td class="num">{{ duration(it.seconds) }}</td>
+                    <td class="pct-col">
+                      <div class="meter"><span [class]="it.productivity" [style.width.%]="it.percent"></span></div>
+                      <span class="pct">{{ it.percent | number: '1.1-1' }}%</span>
+                    </td>
+                  </tr>
+                } @empty {
+                  @if (!s.loading) {
+                    <tr><td [attr.colspan]="tab === 'by-categories' ? 4 : 5" class="state">
+                      <mat-icon>{{ search() || productivity() ? 'search_off' : 'insights' }}</mat-icon>
+                      {{ search() || productivity() ? 'Nothing matches these filters' : 'Activity not yet tracked for this period' }}
+                    </td></tr>
+                  }
+                }
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        @let e = events();
+        <div class="table-wrap">
+          <table class="detail">
+            <thead>
+              <tr>
+                <th class="time-col">
+                  <button type="button" class="sort" (click)="toggleOrder()" [attr.aria-label]="newestFirst() ? 'Show oldest first' : 'Show newest first'">
+                    Time <mat-icon>{{ newestFirst() ? 'arrow_downward' : 'arrow_upward' }}</mat-icon>
+                  </button>
+                </th>
+                @if (members().length > 1) { <th class="who-col">Employee</th> }
+                <th class="app-col">Application</th>
+                <th>Title / Website</th>
+                <th class="cat-col">Category</th>
+                <th class="num">Duration</th>
+                <th class="prod-col">Productivity</th>
+              </tr>
+            </thead>
+            <tbody>
+              @if (e.error) {
+                <tr><td [attr.colspan]="members().length > 1 ? 7 : 6" class="state error"><mat-icon>error_outline</mat-icon>{{ e.error }}
+                  <button type="button" class="retry" (click)="retry()">Try again</button></td></tr>
+              } @else {
+                @for (ev of e.data?.items ?? []; track ev.id) {
+                  <tr>
+                    <td class="time-col">
+                      <strong>{{ ev.startedAt | date: 'h:mm:ss a' : period.zone().offset }}</strong>
+                      <small>{{ ev.startedAt | date: 'EEE, d MMM' : period.zone().offset }}</small>
+                    </td>
+                    @if (members().length > 1) { <td class="ellipsis-cell" [title]="ev.userName">{{ ev.userName }}</td> }
+                    <td>
+                      <div class="name">
+                        @let tl = tile(ev.appName);
+                        <span class="tile small" [style.background]="tl.color">{{ tl.letter }}</span>
+                        <span class="text"><strong>{{ ev.appName }}</strong><small>{{ ev.app }}</small></span>
+                      </div>
+                    </td>
+                    <td class="title-col">
+                      <span class="ellipsis" [title]="ev.title">{{ ev.title }}</span>
+                      @if (ev.domain) { <small class="domain"><mat-icon inline>language</mat-icon>{{ ev.domain }}</small> }
+                    </td>
+                    <td class="muted">{{ ev.category }}</td>
+                    <td class="num">{{ duration(ev.seconds) }}</td>
+                    <td class="prod-col"><span class="pill" [class]="'pill ' + ev.productivity"><mat-icon>{{ icon(ev.productivity) }}</mat-icon>{{ ev.productivity }}</span></td>
+                  </tr>
+                } @empty {
+                  @if (!e.loading) {
+                    <tr><td [attr.colspan]="members().length > 1 ? 7 : 6" class="state">
+                      <mat-icon>{{ search() || productivity() ? 'search_off' : 'insights' }}</mat-icon>
+                      {{ search() || productivity() ? 'Nothing matches these filters' : 'Activity not yet tracked for this period' }}
+                    </td></tr>
+                  }
+                }
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (pageRange().total > pageSize) {
+          <div class="pager">
+            <span>{{ pageRange().first | number }}–{{ pageRange().last | number }} of {{ pageRange().total | number }}</span>
+            <button type="button" aria-label="Previous page" [disabled]="page() === 0" (click)="setPage(page() - 1)"><mat-icon>chevron_left</mat-icon></button>
+            <button type="button" aria-label="Next page" [disabled]="pageRange().last >= pageRange().total" (click)="setPage(page() + 1)"><mat-icon>chevron_right</mat-icon></button>
+          </div>
+        }
+      }
+    </div>
+  </div>
+</section>

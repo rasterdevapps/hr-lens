@@ -1,0 +1,115 @@
+@if (members().length > 1) {
+  <div class="members" role="group" aria-label="Team member">
+    @for (e of members(); track e.id) {
+      <button type="button" [class.active]="employee() === e" [attr.aria-pressed]="employee() === e" (click)="pick(e)">{{ e.name }}</button>
+    }
+  </div>
+}
+
+<!-- Chart -->
+<section class="chart-card">
+  <header>
+    <ul class="legend">
+      <li><span class="dash keys"></span>Key Strokes</li>
+      <li><span class="dash clicks"></span>Mouse Clicks</li>
+    </ul>
+    <h3>Activity Level Chart</h3>
+    @if (chart(); as c) {
+      <span class="totals">{{ c.totalKeys }} key strokes · {{ c.totalClicks }} clicks</span>
+    }
+  </header>
+
+  @if (chart(); as c) {
+    <div class="chart">
+      <div class="y-axis">
+        @for (t of c.ticks; track t) { <span>{{ t }}</span> }
+      </div>
+      <div class="plot" [style.--rows]="c.ticks.length - 1">
+        <svg viewBox="0 0 1000 100" preserveAspectRatio="none" role="img" aria-label="Key strokes and mouse clicks through the day">
+          <path class="keys" [attr.d]="c.keys" />
+          <path class="clicks" [attr.d]="c.clicks" />
+        </svg>
+        <div class="hover">
+          @for (p of c.points; track $index) {
+            <span [matTooltip]="p.time + ' · ' + p.keys + ' key strokes · ' + p.clicks + ' mouse clicks'"></span>
+          }
+        </div>
+      </div>
+      <div class="x-axis">
+        @for (l of c.labels; track l.text) { <span [style.left.%]="l.left">{{ l.text }}</span> }
+      </div>
+    </div>
+  } @else if (input().error) {
+    <p class="no-data error">{{ input().error }} <button type="button" class="retry" (click)="retry()">Try again</button></p>
+  } @else if (!input().loading) {
+    <p class="no-data">No key strokes or clicks recorded for {{ employee().name }} on this day.<br>
+      <small>They are counted by the HR Lens agent on their computer (counts only, never which keys).</small></p>
+  }
+</section>
+
+<!-- Log -->
+<section class="log">
+  <div class="log-tools">
+    <button type="button" [class.on]="filter() !== 'all'" [matMenuTriggerFor]="filterMenu"
+            [attr.aria-label]="'Filter by productivity, showing ' + filterLabel()" matTooltip="Filter">
+      <mat-icon>filter_alt</mat-icon>
+    </button>
+    <mat-menu #filterMenu="matMenu" xPosition="before">
+      @for (f of filters; track f.value) {
+        <button mat-menu-item (click)="filter.set(f.value)">
+          <mat-icon>{{ filter() === f.value ? 'radio_button_checked' : 'radio_button_unchecked' }}</mat-icon>
+          <span>{{ f.label }}</span>
+        </button>
+      }
+    </mat-menu>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="prod">Productivity</th>
+          <th>
+            <button type="button" class="sort" (click)="newestFirst.set(!newestFirst())"
+                    [attr.aria-label]="'Sort by date, ' + (newestFirst() ? 'newest first' : 'oldest first')">
+              Date <mat-icon>{{ newestFirst() ? 'arrow_downward' : 'arrow_upward' }}</mat-icon>
+            </button>
+          </th>
+          <th>Duration</th>
+          <th>Title</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (r of rows(); track r.id) {
+          <tr>
+            <td class="prod">
+              <mat-icon [class]="r.productivity === 'unproductive' ? 'non-productive' : r.productivity" [matTooltip]="r.label" [attr.aria-label]="r.label">{{ r.icon }}</mat-icon>
+            </td>
+            <td>{{ r.date }}</td>
+            <td>{{ r.duration }}</td>
+            <td class="title" [title]="r.title">{{ r.title }}</td>
+            <td class="desc" [title]="r.description">{{ r.description }}</td>
+          </tr>
+        } @empty {
+          @if (log().error) {
+            <tr><td colspan="5" class="empty error">{{ log().error }} <button type="button" class="retry" (click)="retry()">Try again</button></td></tr>
+          } @else if (!log().loading) {
+            <tr><td colspan="5" class="empty">{{ filter() === 'all' ? 'No activity recorded on this day' : 'No ' + filterLabel().toLowerCase() + ' activity on this day' }}</td></tr>
+          }
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <nav class="pager" aria-label="Pages">
+    <button type="button" aria-label="First page" [disabled]="page() === 1" (click)="go(1)"><mat-icon>first_page</mat-icon></button>
+    <button type="button" aria-label="Previous page" [disabled]="page() === 1" (click)="go(page() - 1)"><mat-icon>arrow_left</mat-icon></button>
+    @for (p of pages(); track p) {
+      <button type="button" class="num" [class.active]="p === page()" [attr.aria-current]="p === page() ? 'page' : null" (click)="go(p)">{{ p }}</button>
+    }
+    <button type="button" aria-label="Next page" [disabled]="page() === pageCount()" (click)="go(page() + 1)"><mat-icon>arrow_right</mat-icon></button>
+    <button type="button" aria-label="Last page" [disabled]="page() === pageCount()" (click)="go(pageCount())"><mat-icon>last_page</mat-icon></button>
+    <span class="range">{{ range() }}</span>
+  </nav>
+</section>

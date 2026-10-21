@@ -1,0 +1,445 @@
+@let p = profile();
+@if (loadError()) {
+  <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ loadError() }}
+    <button type="button" class="link" (click)="load()">Try again</button>
+  </p>
+} @else if (p) {
+  <div class="profile">
+    <!-- ---------- Left: who this is ---------- -->
+    <aside class="card who">
+      <div class="photo-wrap">
+        <div class="photo">
+          @if (photoUrl()) {
+            <img [src]="photoUrl()" alt="Profile photo">
+          } @else {
+            <span class="initials">{{ auth.initials() }}</span>
+          }
+        </div>
+        <label class="camera" [class.busy]="photoBusy()" matTooltip="Change photo">
+          <mat-icon>photo_camera</mat-icon>
+          <input type="file" accept="image/jpeg,image/png,image/webp" [disabled]="photoBusy()" (change)="uploadPhoto($any($event.target))">
+        </label>
+        @if (p.hasPhoto) {
+          <button type="button" class="remove-photo" matTooltip="Remove photo" aria-label="Remove photo" [disabled]="photoBusy()" (click)="removePhoto()">
+            <mat-icon>close</mat-icon>
+          </button>
+        }
+      </div>
+
+      <h2 class="name">{{ displayName() }}</h2>
+      <p class="email">
+        <span class="addr" [title]="p.user.email">{{ p.user.email }}</span>
+        <button type="button" class="copy" aria-label="Copy email" [matTooltip]="copied() ? 'Copied' : 'Copy'" (click)="copyEmail()">
+          <mat-icon>{{ copied() ? 'check' : 'content_copy' }}</mat-icon>
+        </button>
+      </p>
+      @if (p.user.branch) {
+        <p class="place"><mat-icon>place</mat-icon>{{ p.user.branch.name }}</p>
+      }
+      <span class="hl-chip" [class]="'hl-chip ' + (p.user.role === 'super_admin' ? 'admin' : p.user.role)">{{ auth.roleLabel() }}</span>
+
+      <dl class="facts">
+        <dt>Job Title</dt><dd>{{ p.details.job.jobTitle || '–' }}</dd>
+        <dt>Department</dt><dd>{{ p.user.department?.name || '–' }}</dd>
+        <dt>Team</dt><dd>{{ p.user.team?.name || '–' }}</dd>
+        <dt>Reports To</dt><dd>{{ p.user.manager?.name || '–' }}</dd>
+        <dt>Emp Id</dt><dd>{{ p.user.employeeCode }}</dd>
+      </dl>
+    </aside>
+
+    <!-- ---------- Right: tabs ---------- -->
+    <section class="main">
+      <nav class="hl-tabs" aria-label="Profile sections">
+        @for (t of tabs; track t.key) {
+          <a href="#" [class.active]="tab() === t.key" (click)="$event.preventDefault(); tab.set(t.key)">{{ t.label }}</a>
+        }
+      </nav>
+
+
+      @switch (tab()) {
+        <!-- ===== About ===== -->
+        @case ('about') {
+          <div class="hl-seg sub" role="group" aria-label="About view">
+            <button type="button" [class.active]="aboutView() === 'summary'" (click)="aboutView.set('summary')">Summary</button>
+            <button type="button" [class.active]="aboutView() === 'timeline'" (click)="aboutView.set('timeline')">Timeline</button>
+          </div>
+
+          @if (aboutView() === 'summary') {
+            <div class="card">
+              <header class="card-head"><h3>Primary Details</h3></header>
+              <dl class="grid cols-3">
+                @for (f of summaryFields; track f.key) {
+                  <div><dt>{{ f.label }}</dt><dd [class.unset]="!value('summary', f)">{{ value('summary', f) || '-Not Set-' }}</dd></div>
+                }
+              </dl>
+            </div>
+            <div class="card">
+              <header class="card-head"><h3>Reporting Team</h3><span class="muted">{{ p.directReports.length }} {{ p.directReports.length === 1 ? 'person reports' : 'people report' }} to you</span></header>
+              @if (p.directReports.length) {
+                <ul class="people">
+                  @for (r of p.directReports; track r.id) {
+                    <li><span class="dot">{{ r.name[0] }}</span>{{ r.name }}</li>
+                  }
+                </ul>
+              } @else {
+                <p class="empty">No one reports to you. Reporting lines are set on the Users page.</p>
+              }
+            </div>
+          } @else {
+            <div class="card">
+              <header class="card-head"><h3>Timeline</h3></header>
+              <ol class="timeline">
+                @for (e of timeline(); track $index) {
+                  <li>
+                    <span class="tl-icon"><mat-icon>{{ e.icon }}</mat-icon></span>
+                    <div class="tl-body">
+                      <strong>{{ e.title }}</strong>
+                      <span class="muted">{{ e.detail }}</span>
+                    </div>
+                    <time class="muted">{{ e.at | date: 'd MMM y' }}</time>
+                  </li>
+                }
+              </ol>
+            </div>
+          }
+        }
+
+        <!-- ===== Profile ===== -->
+        @case ('profile') {
+          <div class="two">
+            <div class="card">
+              <header class="card-head"><h3>Primary Details</h3><button type="button" class="link" (click)="edit('primary')"><mat-icon>edit_square</mat-icon>Edit</button></header>
+              <dl class="grid cols-3">
+                @for (f of fields.primary; track f.key) {
+                  <div><dt>{{ f.label }}</dt><dd [class.unset]="!value('primary', f)">{{ value('primary', f) || '-Not Set-' }}</dd></div>
+                }
+              </dl>
+            </div>
+            <div class="card">
+              <header class="card-head"><h3>Contact Details</h3><button type="button" class="link" (click)="edit('contact')"><mat-icon>edit_square</mat-icon>Edit</button></header>
+              <dl class="grid cols-2">
+                @for (f of fields.contact; track f.key) {
+                  <div><dt>{{ f.label }}</dt><dd [class.unset]="!value('contact', f)">{{ value('contact', f) || '-Not Set-' }}</dd></div>
+                }
+              </dl>
+            </div>
+            <div class="card">
+              <header class="card-head"><h3>Address</h3><button type="button" class="link" (click)="edit('address')"><mat-icon>edit_square</mat-icon>Edit</button></header>
+              <dl class="grid cols-2">
+                @for (f of fields.address; track f.key) {
+                  <div><dt>{{ f.label }}</dt><dd class="pre" [class.unset]="!value('address', f)">{{ value('address', f) || '-Not Set-' }}</dd></div>
+                }
+              </dl>
+            </div>
+            <div class="card">
+              <header class="card-head"><h3>Relations</h3><button type="button" class="link" (click)="editRelations()"><mat-icon>{{ p.details.relations.length ? 'edit_square' : 'add' }}</mat-icon>{{ p.details.relations.length ? 'Edit' : 'Add' }}</button></header>
+              @if (p.details.relations.length) {
+                <ul class="people">
+                  @for (r of p.details.relations; track $index) {
+                    <li><span class="dot">{{ r.name[0] }}</span><span class="who-rel"><strong>{{ r.name }}</strong><span class="muted">{{ r.relation }}{{ r.phone ? ' · ' + r.phone : '' }}</span></span></li>
+                  }
+                </ul>
+              } @else {
+                <p class="empty">No relations added yet.</p>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- ===== Job ===== -->
+        @case ('job') {
+          <div class="card">
+            <header class="card-head"><h3>Job Details</h3><button type="button" class="link" (click)="edit('job')"><mat-icon>edit_square</mat-icon>Edit</button></header>
+            <dl class="grid cols-3">
+              @for (f of fields.job; track f.key) {
+                <div><dt>{{ f.label }}</dt><dd [class.unset]="!value('job', f)">{{ value('job', f) || '-Not Set-' }}</dd></div>
+              }
+            </dl>
+          </div>
+          <div class="card">
+            <header class="card-head"><h3>Organization</h3><button type="button" class="link" (click)="edit('org')"><mat-icon>edit_square</mat-icon>Edit</button></header>
+            <dl class="grid cols-3">
+              @for (f of fields.org; track f.key) {
+                <div>
+                  <dt>{{ f.label }}</dt>
+                  @if (f.key === 'manager' && p.user.manager) {
+                    <dd class="person"><span class="dot">{{ p.user.manager.name[0] }}</span>{{ p.user.manager.name }}</dd>
+                  } @else {
+                    <dd [class.unset]="!value('org', f)">{{ value('org', f) || '-Not Set-' }}</dd>
+                  }
+                </div>
+              }
+              <div><dt>Direct Reports</dt><dd [class.unset]="!p.directReports.length">{{ p.directReports.length || '-None-' }}</dd></div>
+            </dl>
+            <p class="hint">Department, location, team and reporting line are set by an administrator on the Users page.</p>
+          </div>
+        }
+
+        <!-- ===== Documents ===== -->
+        @case ('documents') {
+          <div class="docs">
+            <nav class="card folders" aria-label="Document folders">
+              <h3>Employee Document Folders</h3>
+              @for (f of folders; track f.key) {
+                <button type="button" [class.active]="folder() === f.key" (click)="folder.set(f.key)">
+                  <mat-icon>{{ f.icon }}</mat-icon><span>{{ f.label }}</span>
+                  <span class="count">{{ docCounts()[f.key] }}</span>
+                </button>
+              }
+            </nav>
+
+            <div class="card folder-view">
+              <header class="card-head">
+                <h3><mat-icon>{{ folderInfo().icon }}</mat-icon>{{ folderInfo().label }}</h3>
+                <button type="button" class="hl-btn primary small" (click)="addDocument()"><mat-icon>add</mat-icon>Add Details</button>
+              </header>
+
+              @if (folderDocs().length) {
+                <ul class="entries">
+                  @for (d of folderDocs(); track d.id) {
+                    <li class="entry">
+                      <div class="entry-head">
+                        <strong>{{ docTitle(d) }}</strong>
+                        <span class="entry-actions">
+                          <button type="button" aria-label="Edit" matTooltip="Edit" (click)="editDocument(d)"><mat-icon>edit_square</mat-icon></button>
+                          <button type="button" class="danger" aria-label="Remove" matTooltip="Remove" (click)="removing.set(d)"><mat-icon>delete_outline</mat-icon></button>
+                        </span>
+                      </div>
+                      <dl class="grid cols-3 tight">
+                        @for (f of docFields(d); track f.key) {
+                          @if (d.details[f.key]) {
+                            <div><dt>{{ f.label }}</dt><dd class="pre">{{ format(f, d.details[f.key]) }}</dd></div>
+                          }
+                        }
+                      </dl>
+                      @if (d.fileName) {
+                        <a class="attachment" [href]="'/api/profile/documents/' + d.id + '/file'" target="_blank" rel="noopener">
+                          <mat-icon>attach_file</mat-icon>{{ d.fileName }}<span class="muted">{{ fileSize(d.size) }}</span>
+                        </a>
+                      }
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <div class="placeholder-box">
+                  <mat-icon>{{ folderInfo().icon }}</mat-icon>
+                  Nothing filed under {{ folderInfo().label }} yet.
+                </div>
+              }
+            </div>
+          </div>
+        }
+      }
+    </section>
+  </div>
+}
+
+<!-- ---------- Edit a section ---------- -->
+@if (editing()) {
+  <div class="hl-backdrop" (click)="cancelEdit()">
+    <form class="hl-dialog wide-form" role="dialog" aria-modal="true" aria-labelledby="edit-title" novalidate
+          (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); saveSection()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>edit_square</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="edit-title">{{ editTitle() }}</h2>
+          <p>Leave a field empty to keep it as not set.</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="cancelEdit()"><mat-icon>close</mat-icon></button>
+      </header>
+      <div class="hl-body">
+        <div class="fields" [class.single]="editing() === 'address'">
+          @for (f of editFields(); track f.key) {
+            <label class="hl-field">
+              <span>{{ f.label }} @if (f.required) { <span class="req">*</span> }</span>
+              @switch (f.type) {
+                @case ('select') {
+                  <select [class.invalid]="errors()[f.key]" (change)="set(f.key, $any($event.target).value)" (blur)="form.blur(f.key)">
+                    <option value="" [selected]="!draft[f.key]">-Not Set-</option>
+                    @for (o of f.options; track o.value) { <option [value]="o.value" [selected]="draft[f.key] === o.value">{{ o.label }}</option> }
+                  </select>
+                }
+                @case ('bool') {
+                  <select [class.invalid]="errors()[f.key]" (change)="set(f.key, $any($event.target).value)" (blur)="form.blur(f.key)">
+                    <option value="" [selected]="!draft[f.key]">-Not Set-</option>
+                    @for (o of f.options; track o.value) { <option [value]="o.value" [selected]="draft[f.key] === o.value">{{ o.label }}</option> }
+                  </select>
+                }
+                @case ('textarea') {
+                  <textarea rows="4" [class.invalid]="errors()[f.key]" [value]="draft[f.key]" (input)="set(f.key, $any($event.target).value)" (blur)="form.blur(f.key)"></textarea>
+                }
+                @case ('date') {
+                  <input type="date" [class.invalid]="errors()[f.key]" [value]="draft[f.key]" (input)="set(f.key, $any($event.target).value)" (blur)="form.blur(f.key)">
+                }
+                @case ('number') {
+                  <input type="number" min="0" max="12" [class.invalid]="errors()[f.key]" [value]="draft[f.key]" (input)="set(f.key, $any($event.target).value)" (blur)="form.blur(f.key)">
+                }
+                @default {
+                  <input [type]="f.type === 'email' ? 'email' : f.type === 'tel' ? 'tel' : 'text'" [class.invalid]="errors()[f.key]" [value]="draft[f.key]" (input)="set(f.key, $any($event.target).value)" (blur)="form.blur(f.key)">
+                }
+              }
+              @if (errors()[f.key]; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+          }
+        </div>
+        @if (saveError()) { <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ saveError() }}</p> }
+      </div>
+      <footer class="hl-foot">
+        <button type="button" class="hl-btn" (click)="cancelEdit()">Cancel</button>
+        <button type="submit" class="hl-btn primary" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save' }}</button>
+      </footer>
+    </form>
+  </div>
+}
+
+<!-- ---------- Relations ---------- -->
+@if (relationsOpen()) {
+  <div class="hl-backdrop" (click)="relationsOpen.set(false)">
+    <form class="hl-dialog wide-form" role="dialog" aria-modal="true" aria-labelledby="rel-title" novalidate
+          (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); saveRelations()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>family_restroom</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="rel-title">Relations</h2>
+          <p>Family and emergency contacts, up to 10.</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="relationsOpen.set(false)"><mat-icon>close</mat-icon></button>
+      </header>
+      <div class="hl-body">
+        @for (r of relations; track $index; let i = $index) {
+          <div class="rel-row">
+            <label class="hl-field">
+              <span>Name <span class="req">*</span></span>
+              <input type="text" [class.invalid]="relErrors()[i + '.name']" [value]="r.name" (input)="setRel(i, 'name', $any($event.target).value)" (blur)="relForm.blur(i + '.name')">
+              @if (relErrors()[i + '.name']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+            <label class="hl-field">
+              <span>Relation <span class="req">*</span></span>
+              <select [class.invalid]="relErrors()[i + '.relation']" (change)="setRel(i, 'relation', $any($event.target).value)" (blur)="relForm.blur(i + '.relation')">
+                <option value="" [selected]="!r.relation">Choose</option>
+                @for (o of relationOptions; track o) { <option [value]="o" [selected]="r.relation === o">{{ o }}</option> }
+              </select>
+              @if (relErrors()[i + '.relation']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+            <label class="hl-field">
+              <span>Phone</span>
+              <input type="tel" [class.invalid]="relErrors()[i + '.phone']" [value]="r.phone" (input)="setRel(i, 'phone', $any($event.target).value)" (blur)="relForm.blur(i + '.phone')">
+              @if (relErrors()[i + '.phone']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+            <button type="button" class="row-remove" aria-label="Remove relation" matTooltip="Remove" (click)="removeRelation(i)"><mat-icon>close</mat-icon></button>
+          </div>
+        }
+        <button type="button" class="link" [disabled]="relations.length >= 10" (click)="addRelation()"><mat-icon>add</mat-icon>Add another</button>
+        @if (saveError()) { <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ saveError() }}</p> }
+      </div>
+      <footer class="hl-foot">
+        <button type="button" class="hl-btn" (click)="relationsOpen.set(false)">Cancel</button>
+        <button type="submit" class="hl-btn primary" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save' }}</button>
+      </footer>
+    </form>
+  </div>
+}
+
+<!-- ---------- Add / edit a document ---------- -->
+@if (docOpen()) {
+  <div class="hl-backdrop" (click)="docOpen.set(false)">
+    <form class="hl-dialog wide doc-dialog" role="dialog" aria-modal="true" aria-labelledby="doc-title" novalidate
+          (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); saveDocument()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>{{ folderInfo().icon }}</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="doc-title">{{ folderInfo().label }}</h2>
+          <p>{{ docId() === null ? 'Add an entry and attach the document.' : 'Change the entry or replace its document.' }}</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="docOpen.set(false)"><mat-icon>close</mat-icon></button>
+      </header>
+      <div class="hl-body doc-body">
+        <div class="drop" [class.has-file]="docFile() || docFileName()" [class.invalid]="docErrors()['file']">
+          @if (docFile(); as f) {
+            <mat-icon class="big">{{ f.type === 'application/pdf' ? 'picture_as_pdf' : 'image' }}</mat-icon>
+            <strong>{{ f.name }}</strong>
+            <span class="muted">{{ fileSize(f.size) }} · replaces {{ docFileName() || 'nothing' }}</span>
+            <button type="button" class="link" (click)="clearFile()"><mat-icon>close</mat-icon>Remove</button>
+          } @else if (docFileName()) {
+            <mat-icon class="big">description</mat-icon>
+            <strong>{{ docFileName() }}</strong>
+            <span class="muted">Attached. Choose another file to replace it.</span>
+          } @else {
+            <mat-icon class="big">cloud_upload</mat-icon>
+            <strong>No document attached</strong>
+            <span class="muted">PDF, JPG or PNG up to 10 MB</span>
+          }
+          <label class="hl-btn attach">
+            <mat-icon>attach_file</mat-icon>Attach Doc
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" (change)="pickFile($any($event.target))">
+          </label>
+          @if (docErrors()['file']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+          <span class="allowed">Allowed extensions: .pdf, .jpg, .jpeg, .png</span>
+        </div>
+
+        <div class="fields">
+          @for (f of folderInfo().fields; track f.key) {
+            <label class="hl-field" [class.span2]="f.type === 'textarea'">
+              <span>{{ f.label }} @if (f.required) { <span class="req">*</span> }</span>
+              @switch (f.type) {
+                @case ('select') {
+                  <select [class.invalid]="docErrors()[f.key]" (change)="setDoc(f.key, $any($event.target).value)" (blur)="docForm.blur(f.key)">
+                    <option value="" [selected]="!docDraft[f.key]">Select {{ f.label }}</option>
+                    @for (o of f.options; track o.value) { <option [value]="o.value" [selected]="docDraft[f.key] === o.value">{{ o.label }}</option> }
+                  </select>
+                }
+                @case ('textarea') {
+                  <textarea rows="3" [class.invalid]="docErrors()[f.key]" [value]="docDraft[f.key]" (input)="setDoc(f.key, $any($event.target).value)" (blur)="docForm.blur(f.key)"></textarea>
+                }
+                @case ('date') {
+                  <input type="date" [class.invalid]="docErrors()[f.key]" [value]="docDraft[f.key]" (input)="setDoc(f.key, $any($event.target).value)" (blur)="docForm.blur(f.key)">
+                }
+                @default {
+                  <input type="text" [placeholder]="f.label" [class.invalid]="docErrors()[f.key]" [value]="docDraft[f.key]" (input)="setDoc(f.key, $any($event.target).value)" (blur)="docForm.blur(f.key)">
+                }
+              }
+              @if (docErrors()[f.key]; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+          }
+          @if (docError()) { <p class="hl-alert span2" role="alert"><mat-icon>error_outline</mat-icon>{{ docError() }}</p> }
+        </div>
+      </div>
+      <footer class="hl-foot">
+        <button type="button" class="hl-btn" (click)="docOpen.set(false)">Cancel</button>
+        <button type="submit" class="hl-btn primary" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save' }}</button>
+      </footer>
+    </form>
+  </div>
+}
+
+<!-- ---------- Remove a document ---------- -->
+@if (removing(); as d) {
+  <div class="hl-backdrop" (click)="removing.set(null)">
+    <div class="hl-dialog danger" role="dialog" aria-modal="true" aria-labelledby="rm-title" (click)="$event.stopPropagation()">
+      <header class="hl-head">
+        <span class="hl-badge warn"><mat-icon>delete_outline</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="rm-title">Remove this entry?</h2>
+          <p>{{ docTitle(d) }}</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="removing.set(null)"><mat-icon>close</mat-icon></button>
+      </header>
+      <div class="hl-body">
+        <p class="muted">The entry and its attached file are deleted. This cannot be undone.</p>
+      </div>
+      <footer class="hl-foot">
+        <button type="button" class="hl-btn" (click)="removing.set(null)">Keep</button>
+        <button type="button" class="hl-btn danger" [disabled]="saving()" (click)="confirmRemove()">Remove</button>
+      </footer>
+    </div>
+  </div>
+}
+
+<!-- ---------- Toast ---------- -->
+@if (notice(); as n) {
+  <div class="toast" [class.bad]="n.bad" role="status" aria-live="polite">
+    <mat-icon>{{ n.bad ? 'error_outline' : 'check_circle' }}</mat-icon>
+    <span>{{ n.text }}</span>
+    <button type="button" aria-label="Dismiss" (click)="notice.set(null)"><mat-icon>close</mat-icon></button>
+  </div>
+}

@@ -1,0 +1,126 @@
+// Tabs and tables come from dashboard.component.scss; search, filters, list card, tiles and pager from activity.component.scss
+
+.intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px 8px;
+
+  h2 { margin: 0; font-size: 1.15rem; font-weight: 600; letter-spacing: -0.01em; }
+  p { margin: 4px 0 0; color: var(--muted); font-size: 0.85rem; }
+  .hl-btn { flex: none; }
+}
+
+.filters { justify-content: flex-start; }
+.spacer { flex: 1; }
+
+// Applications / Websites switch
+.kinds {
+  display: flex; padding: 3px; border-radius: 10px; background: var(--seg-bg);
+
+  button {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: none;
+    color: var(--muted); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    &:hover { color: var(--ink); }
+    &.active { background: var(--surface); color: var(--primary-dark); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12); }
+  }
+  &.wide { margin-bottom: 18px; button { flex: 1; justify-content: center; height: 36px; } }
+}
+
+.select {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 4px 0 12px; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+  color: var(--faint); font-size: 0.8rem;
+  select { height: 100%; max-width: 170px; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 0.85rem; cursor: pointer; }
+  &:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+}
+
+.levels { display: inline-flex; margin-bottom: 12px; }
+.levels button i { display: inline-block; }
+
+// Bulk action bar
+.bulk {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 10px 14px;
+  border-radius: 12px; background: var(--side-bg); color: #cbd5e1; font-size: 0.85rem;
+  box-shadow: var(--shadow-lg);
+  strong { color: #fff; }
+  button {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 12px; border: 0; border-radius: 8px;
+    font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    &:disabled { opacity: 0.6; cursor: default; }
+  }
+  .mark.productive { background: #16a34a; color: #fff; }
+  .mark.unproductive { background: #dc2626; color: #fff; }
+  .mark.neutral { background: #64748b; color: #fff; }
+  .clear { margin-left: auto; background: none; color: #cbd5e1; &:hover { color: #fff; } }
+}
+
+// ---------- Table ----------
+th.check, td.check { width: 20px; padding-right: 0; }
+input[type='checkbox'] { width: 16px; height: 16px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+tr.picked td { background: var(--primary-tint); }
+
+.cat { width: 190px; }
+.type { width: 300px; }
+.num { width: 90px; }
+
+.name small.browser { display: inline-flex; align-items: center; gap: 4px; color: var(--primary-dark); }
+
+// Category picker inside a row
+select.inline {
+  max-width: 180px; height: 32px; padding: 0 8px;
+  border: 1px solid transparent; border-radius: 8px; background: none;
+  color: var(--ink); font: inherit; font-size: 0.85rem; cursor: pointer;
+  &:hover, &:focus { border-color: var(--border-strong); background: var(--surface); outline: 0; }
+  &:disabled { cursor: default; }
+}
+
+// Productive / Unproductive / Neutral switch
+.rate {
+  display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--surface-2);
+  border: 1px solid var(--border);
+
+  button {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: none;
+    color: var(--faint); font: inherit; font-size: 0.75rem; font-weight: 600; cursor: pointer;
+    transition: background 150ms ease, color 150ms ease;
+    mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    &:hover:not(.on):not(:disabled) { color: var(--ink); background: var(--surface); }
+    &:disabled { cursor: default; }
+    &.on { color: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18); }
+    &.productive.on { background: #16a34a; }
+    &.unproductive.on { background: #dc2626; }
+    &.neutral.on { background: #64748b; }
+  }
+
+  &.big { display: flex; button { flex: 1; justify-content: center; height: 38px; font-size: 0.82rem; } }
+}
+
+// The level classes paint bars on the Activity page; keep these buttons plain until switched on
+.rate button.productive:not(.on), .rate button.neutral:not(.on), .rate button.unproductive:not(.on) { background: none; }
+
+.rule-form { display: flex; flex-direction: column; gap: 16px; }
+
+// Small confirmation at the bottom of the screen
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 1100;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: 12px; background: var(--side-bg); color: #fff; font-size: 0.875rem;
+  box-shadow: var(--shadow-lg);
+  animation: hl-rise 220ms ease-out;
+  mat-icon { font-size: 18px; width: 18px; height: 18px; color: #4ade80; }
+  &.error mat-icon { color: #f87171; }
+}
+
+@media (max-width: 900px) {
+  .intro { flex-direction: column; align-items: flex-start; padding: 16px; }
+  .rate button span { display: none; }
+}

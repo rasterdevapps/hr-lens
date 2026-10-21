@@ -1,0 +1,307 @@
+<div class="hl-intro">
+  <div>
+    <h2>Users</h2>
+    <p>Everyone who uses HR Lens: their role, team, manager and when they were last active.</p>
+  </div>
+  <button type="button" class="hl-btn primary" (click)="add()"><mat-icon>person_add</mat-icon>Add user</button>
+</div>
+
+<nav class="hl-tabs">
+  @for (t of tabs; track t.key) {
+    <a [routerLink]="t.route" [class.active]="t.key === 'users'"><mat-icon>{{ t.icon }}</mat-icon>{{ t.label }}</a>
+  }
+</nav>
+
+<div class="toolbar">
+  <div class="hl-seg" role="group" aria-label="Status">
+    @for (s of statuses; track s.value) {
+      <button type="button" [class.active]="status() === s.value" [attr.aria-pressed]="status() === s.value"
+              (click)="setStatus(s.value)">{{ s.label }}</button>
+    }
+  </div>
+
+  @if (notice()) {
+    <p class="notice" role="status"><mat-icon>info_outline</mat-icon>{{ notice() }}
+      <button type="button" aria-label="Dismiss" (click)="notice.set('')"><mat-icon>close</mat-icon></button>
+    </p>
+  }
+  <span class="spacer"></span>
+
+  <label class="hl-search">
+    <mat-icon>search</mat-icon>
+    <input type="search" placeholder="Search id, name, username, team…" aria-label="Search for user"
+           [value]="search()" (input)="setSearch($any($event.target).value)">
+  </label>
+  <button type="button" class="icon" aria-label="Refresh" matTooltip="Refresh" (click)="refresh()">
+    <mat-icon [class.spin]="loading()">refresh</mat-icon>
+  </button>
+  <button type="button" class="icon" aria-label="Export users" matTooltip="Export users (CSV)" (click)="exportCsv()">
+    <mat-icon>download</mat-icon>
+  </button>
+  <button type="button" class="icon" aria-label="Help"
+          matTooltip="Filter by status, search by id, name, username, team or manager, and click a column to sort.">
+    <mat-icon>help_outline</mat-icon>
+  </button>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        @for (c of columns; track c.key) {
+          <th [attr.aria-sort]="ariaSort(c.key)">
+            <button type="button" class="sort" (click)="sort(c.key)">
+              {{ c.label }}
+              @if (sortKey() === c.key) { <mat-icon>{{ ascending() ? 'arrow_upward' : 'arrow_downward' }}</mat-icon> }
+            </button>
+          </th>
+        }
+        <th>Desktop</th>
+        <th [attr.aria-sort]="ariaSort('lastActive')">
+          <button type="button" class="sort" (click)="sort('lastActive')">
+            Last Active
+            @if (sortKey() === 'lastActive') { <mat-icon>{{ ascending() ? 'arrow_upward' : 'arrow_downward' }}</mat-icon> }
+          </button>
+        </th>
+        <th><span class="sr-only">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (r of rows(); track r.user.id) {
+        <tr [class.inactive]="r.user.status === 'inactive'">
+          <td>{{ r.user.employeeCode }}</td>
+          <td>
+            <span class="person" [title]="r.user.name">
+              <span class="avatar" [style.background]="r.color">{{ r.initials }}
+                <span class="dot" [class.online]="r.user.status === 'active' && r.lastActive.includes('second')"></span>
+              </span>
+              <span class="who">
+                <span class="ellipsis">{{ r.user.name }}</span>
+                <small class="ellipsis" [title]="r.user.email">{{ r.user.email }}</small>
+              </span>
+            </span>
+          </td>
+          <td><span class="hl-chip" [class]="'hl-chip ' + (r.user.role === 'super_admin' ? 'admin' : r.user.role)">{{ roleLabel(r.user.role) }}</span></td>
+          <td>{{ r.user.manager?.name ?? '—' }}</td>
+          <td>@if (r.user.team) { <span class="hl-chip"><mat-icon inline>groups</mat-icon>{{ r.user.team.name }}</span> } @else { <span class="muted">—</span> }</td>
+          <td class="desktop">
+            @if (r.user.desktop) { <span><mat-icon inline>computer</mat-icon> {{ r.user.desktop }}</span> }
+            @else { <span class="muted" matTooltip="Shown once the HR Lens agent runs on their computer"><mat-icon inline>computer</mat-icon> Not installed</span> }
+          </td>
+          <td class="muted">{{ r.lastActive }}</td>
+          <td class="row-actions">
+            <button type="button" class="edit" (click)="edit(r.user)"><mat-icon>edit</mat-icon>Edit</button>
+            <button type="button" class="actions" [matMenuTriggerFor]="rowMenu" [attr.aria-label]="'Actions for ' + r.user.name"><mat-icon>more_vert</mat-icon></button>
+            <mat-menu #rowMenu="matMenu" xPosition="before">
+              <button mat-menu-item (click)="edit(r.user)"><mat-icon>edit</mat-icon><span>Edit</span></button>
+              <button mat-menu-item (click)="askPassword(r.user)"><mat-icon>key</mat-icon><span>Reset password</span></button>
+              <button mat-menu-item [disabled]="isSelf(r.user)" (click)="toggleStatus(r.user)">
+                <mat-icon>{{ r.user.status === 'active' ? 'person_off' : 'person' }}</mat-icon>
+                <span>{{ r.user.status === 'active' ? 'Deactivate' : 'Activate' }}</span>
+              </button>
+            </mat-menu>
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td class="empty" [attr.colspan]="columns.length + 3">
+            @if (listError()) {
+              <span class="failed" role="alert">{{ listError() }}</span>
+              <button type="button" class="link" (click)="refresh()">Try again</button>
+            } @else {
+              {{ loading() ? 'Loading…' : 'No users found' }}
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>
+
+<mat-paginator [length]="list().total" [pageSize]="pageSize()" [pageIndex]="pageIndex()"
+               [pageSizeOptions]="[25, 50, 100]" showFirstLastButtons (page)="onPage($event)" aria-label="Users pages" />
+
+<!-- Add / edit user -->
+@if (draft(); as d) {
+  <div class="hl-backdrop" (click)="cancel()">
+    <form class="hl-dialog wide" role="dialog" aria-modal="true" aria-labelledby="user-title" novalidate
+          (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); save()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>{{ d.id === null ? 'person_add' : 'manage_accounts' }}</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="user-title">{{ d.id === null ? 'New user' : 'Edit user' }}</h2>
+          <p>{{ d.id === null ? 'Add someone to HR Lens and choose what they can see.' : (d.firstName + ' ' + d.lastName + ' · ' + d.email) }}</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="cancel()"><mat-icon>close</mat-icon></button>
+      </header>
+
+      <div class="hl-body user-form">
+        <section class="details">
+          <h3><mat-icon>badge</mat-icon>Personal details</h3>
+          <div class="fields">
+            <label class="hl-field">
+              <span>First name <span class="req">*</span></span>
+              <input type="text" [class.invalid]="fieldErrors()['firstName']" [value]="d.firstName" (input)="set(d, 'firstName', $any($event.target).value)" (blur)="form.blur('firstName')">
+              @if (fieldErrors()['firstName']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+            <label class="hl-field">
+              <span>Last name <span class="req">*</span></span>
+              <input type="text" [class.invalid]="fieldErrors()['lastName']" [value]="d.lastName" (input)="set(d, 'lastName', $any($event.target).value)" (blur)="form.blur('lastName')">
+              @if (fieldErrors()['lastName']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+            <label class="hl-field">
+              <span>Employee ID <span class="req">*</span></span>
+              <input type="text" [class.invalid]="fieldErrors()['employeeCode']" [value]="d.employeeCode" (input)="set(d, 'employeeCode', $any($event.target).value)" (blur)="form.blur('employeeCode')">
+              @if (fieldErrors()['employeeCode']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+            <label class="hl-field">
+              <span>Username or email <span class="req">*</span></span>
+              <input type="email" autocomplete="off" [class.invalid]="fieldErrors()['email']" [value]="d.email" (input)="set(d, 'email', $any($event.target).value)" (blur)="form.blur('email')">
+              @if (fieldErrors()['email']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+            @if (d.id === null) {
+              <label class="hl-field">
+                <span>Password <span class="req">*</span></span>
+                <input type="password" autocomplete="new-password" placeholder="At least 8 characters"
+                       [class.invalid]="fieldErrors()['password']" [value]="d.password" (input)="set(d, 'password', $any($event.target).value)" (blur)="form.blur('password')">
+                @if (fieldErrors()['password']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+              </label>
+            }
+            <label class="hl-field">
+              <span>Mobile number</span>
+              <input type="tel" inputmode="numeric" maxlength="15" placeholder="e.g. 9876543210" [class.invalid]="fieldErrors()['mobile']" [value]="d.mobile"
+                     (input)="setMobile(d, $any($event.target))" (blur)="form.blur('mobile')">
+              @if (fieldErrors()['mobile']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+          </div>
+
+          <h3><mat-icon>work_outline</mat-icon>Work</h3>
+          <div class="fields">
+            <label class="hl-field">
+              <span>Role</span>
+              <select [disabled]="roleLocked()" [class.invalid]="fieldErrors()['role']" (change)="d.role = $any($event.target).value">
+                @for (r of lookups().roles; track r.value) { <option [value]="r.value" [selected]="r.value === d.role">{{ r.label }}</option> }
+              </select>
+              @if (fieldErrors()['role']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+            <label class="hl-field">
+              <span>Team</span>
+              <select (change)="d.teamId = toId($any($event.target).value)">
+                <option value="" [selected]="d.teamId === null">No team</option>
+                @for (o of lookups().teams; track o.id) { <option [value]="o.id" [selected]="o.id === d.teamId">{{ o.name }}</option> }
+              </select>
+            </label>
+            <label class="hl-field">
+              <span>Department</span>
+              <select (change)="d.departmentId = toId($any($event.target).value)">
+                <option value="" [selected]="d.departmentId === null">None</option>
+                @for (o of lookups().departments; track o.id) { <option [value]="o.id" [selected]="o.id === d.departmentId">{{ o.name }}</option> }
+              </select>
+            </label>
+            <label class="hl-field">
+              <span>Line manager</span>
+              <select [class.invalid]="fieldErrors()['managerId']" (change)="d.managerId = toId($any($event.target).value); form.touch('managerId')">
+                <option value="" [selected]="d.managerId === null">None</option>
+                @for (o of managers(); track o.id) { <option [value]="o.id" [selected]="o.id === d.managerId">{{ o.name }}</option> }
+              </select>
+              @if (fieldErrors()['managerId']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+            <label class="hl-field">
+              <span>Branch</span>
+              <select (change)="d.branchId = toId($any($event.target).value)">
+                <option value="" [selected]="d.branchId === null">None</option>
+                @for (o of lookups().branches; track o.id) { <option [value]="o.id" [selected]="o.id === d.branchId">{{ o.name }}</option> }
+              </select>
+            </label>
+            <label class="hl-field">
+              <span>Shift</span>
+              <select (change)="d.shiftId = toId($any($event.target).value)">
+                <option value="" [selected]="d.shiftId === null">Default (9:30 AM, no grace)</option>
+                @for (o of lookups().shifts; track o.id) { <option [value]="o.id" [selected]="o.id === d.shiftId">{{ o.name }}</option> }
+              </select>
+            </label>
+            <label class="hl-field">
+              <span>Time zone</span>
+              <input type="text" placeholder="Asia/Kolkata" [class.invalid]="fieldErrors()['timeZone']" [value]="d.timeZone" (input)="set(d, 'timeZone', $any($event.target).value)" (blur)="form.blur('timeZone')">
+              @if (fieldErrors()['timeZone']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+            </label>
+          </div>
+
+          <label class="toggle">
+            <input type="checkbox" [checked]="d.trackAttendance" (change)="d.trackAttendance = $any($event.target).checked">
+            <span class="switch" aria-hidden="true"></span>
+            <span>Mark member attendance using tracking data</span>
+          </label>
+
+          @if (alert()) { <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ alert() }}</p> }
+        </section>
+
+        <section class="groups">
+          <h3><mat-icon>admin_panel_settings</mat-icon>Admin groups</h3>
+          <p class="hint">Teams this person can manage.</p>
+          <div class="chips">
+            @for (t of lookups().teams; track t.id) {
+              <label class="chip" [class.on]="d.adminGroups.includes(t.id)">
+                <input type="checkbox" [checked]="d.adminGroups.includes(t.id)" (change)="toggleGroup(d, t.id, $any($event.target).checked)">
+                <mat-icon>{{ d.adminGroups.includes(t.id) ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+                {{ t.name }}
+              </label>
+            } @empty {
+              <p class="hint">No teams yet.</p>
+            }
+          </div>
+        </section>
+      </div>
+
+      <footer class="hl-foot">
+        <span class="hl-hint"><span class="req">*</span> Required</span>
+        <button type="button" class="hl-btn" (click)="cancel()">Cancel</button>
+        <button type="submit" class="hl-btn primary" [disabled]="saving()"><mat-icon>check</mat-icon>{{ saving() ? 'Saving…' : (d.id === null ? 'Create user' : 'Save changes') }}</button>
+      </footer>
+    </form>
+  </div>
+}
+
+<!-- Reset password -->
+@if (passwordFor(); as u) {
+  <div class="hl-backdrop" (click)="closePassword()">
+    <form class="hl-dialog" role="dialog" aria-modal="true" aria-labelledby="pw-title" novalidate
+          (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); savePassword()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>lock_reset</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="pw-title">Reset password</h2>
+          <p>{{ u.name }} · {{ u.email }}</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="closePassword()"><mat-icon>close</mat-icon></button>
+      </header>
+      @if (passwordDone()) {
+        <div class="hl-body">
+          <p class="pw-done"><mat-icon>check_circle</mat-icon>The password for {{ u.name }} has been changed. They have been signed out on every device.</p>
+        </div>
+        <footer class="hl-foot">
+          <button type="button" class="hl-btn primary" (click)="closePassword()">Done</button>
+        </footer>
+      } @else {
+        <div class="hl-body pw-fields">
+          <label class="hl-field">New password
+            <input type="password" autocomplete="new-password" placeholder="At least 8 characters" [class.invalid]="pwForm.shown()['password']"
+                   [value]="newPassword" (input)="setPw('newPassword', $any($event.target).value)" (blur)="pwForm.blur('password')">
+            @if (pwForm.shown()['password']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+          </label>
+          <label class="hl-field">Confirm new password
+            <input type="password" autocomplete="new-password" [class.invalid]="pwForm.shown()['confirm']"
+                   [value]="confirmPassword" (input)="setPw('confirmPassword', $any($event.target).value)" (blur)="pwForm.blur('confirm')">
+            @if (pwForm.shown()['confirm']; as e) { <span class="hl-error" role="alert">{{ e }}</span> }
+          </label>
+          @if (formError()) { <p class="hl-alert" role="alert"><mat-icon>error_outline</mat-icon>{{ formError() }}</p> }
+        </div>
+        <footer class="hl-foot">
+          <span class="hl-hint">They will be signed out on every device</span>
+          <button type="button" class="hl-btn" (click)="closePassword()">Cancel</button>
+          <button type="submit" class="hl-btn primary" [disabled]="saving()"><mat-icon>check</mat-icon>{{ saving() ? 'Saving…' : 'Reset password' }}</button>
+        </footer>
+      }
+    </form>
+  </div>
+}

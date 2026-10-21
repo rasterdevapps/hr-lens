@@ -1,0 +1,34 @@
+@for (m of maps(); track m.key) {
+  <section class="map" [style.--c]="m.color">
+    <header>
+      <h3>{{ m.label }} : {{ m.total }}</h3>
+      <div class="scale" aria-hidden="true">
+        <span>Less</span>
+        <span class="swatches">
+          @for (o of legend; track o) { <i [style.opacity]="o"></i> }
+        </span>
+        <span>More</span>
+      </div>
+    </header>
+
+    <div class="calendar">
+      <span class="year">{{ year }}</span>
+      <div class="weekdays">
+        @for (d of weekdays; track d) { <span>{{ d }}</span> }
+      </div>
+      <div class="weeks">
+        <div class="months">
+          @for (mo of months; track mo.label) { <span [style.grid-column-start]="mo.column">{{ mo.label }}</span> }
+        </div>
+        <div class="cells" role="img" [attr.aria-label]="m.label + ' per day in ' + year + ', total ' + m.total">
+          @for (b of offset; track $index) { <span class="blank"></span> }
+          @for (c of m.cells; track $index) {
+            <span class="cell" [title]="c.title">
+              @if (c.level) { <i [style.opacity]="c.level / 10"></i> }
+            </span>
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+}

@@ -1,0 +1,62 @@
+:host { display: block; color: var(--ink); }
+
+.day {
+  margin: 4px 0 14px;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.rec {
+  display: block;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  transition: box-shadow 150ms ease, transform 150ms ease, border-color 150ms ease;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { border-color: var(--primary); box-shadow: 0 8px 20px rgba(79, 70, 229, 0.15); transform: translateY(-2px); }
+  &:hover circle[r='12'] { fill: var(--primary); }
+  &:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
+}
+
+.laptop { display: block; width: 100%; height: auto; }
+
+.meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+
+.avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 26px; height: 26px; border-radius: 50%;
+  color: #fff; font-size: 0.6rem; font-weight: 500;
+}
+
+.who { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; color: var(--muted); }
+.name { overflow: hidden; font-size: 0.85rem; text-overflow: ellipsis; white-space: nowrap; }
+.time { font-size: 0.75rem; white-space: nowrap; }
+
+.placeholder-box {
+  strong { color: var(--ink); font-weight: 600; }
+  &.error { color: var(--danger); }
+  .retry { padding: 0; border: 0; background: none; color: var(--primary-dark); font: inherit; font-weight: 600; cursor: pointer; }
+}
+
+.day .count { margin-left: 8px; color: var(--faint); font-size: 0.8rem; font-weight: 500; }
+
+.hour-group {
+  margin-bottom: 18px;
+  h4 { margin: 0 0 10px; color: var(--muted); font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+}
+
+// Player inside the shared .hl-cinema viewer
+.player { display: block; width: min(1600px, calc(100vw - 48px)); max-height: calc(100vh - 170px); background: #000; }

@@ -1,0 +1,91 @@
+<h3 class="day">{{ date() | date: 'MMM d, y' }}
+  @if (recordings().length) { <span class="count">{{ recordings().length }} recordings</span> }
+</h3>
+
+@for (g of groups(); track g.label) {
+  <section class="hour-group">
+    <h4>{{ g.label }}</h4>
+    <div class="grid">
+      @for (r of g.items; track r.id) {
+        <button type="button" class="rec" (click)="playing.set(r)" [attr.aria-label]="'Play recording of ' + r.name + ' from ' + r.time">
+          <ng-container [ngTemplateOutlet]="laptop" />
+          <span class="meta">
+            <span class="avatar" [style.background]="r.color">{{ r.initials }}</span>
+            <span class="who">
+              <span class="name" [title]="r.name">{{ r.time }} – {{ r.until }}</span>
+              <span class="time">{{ r.duration }}{{ members().length > 1 ? ' · ' + r.name : '' }}</span>
+            </span>
+          </span>
+        </button>
+      }
+    </div>
+  </section>
+} @empty {
+  @if (list().error) {
+    <div class="placeholder-box error">
+      <mat-icon>error_outline</mat-icon>
+      <span>{{ list().error }}</span>
+      <button type="button" class="retry" (click)="retry()">Try again</button>
+    </div>
+  } @else if (!list().loading) {
+    <div class="placeholder-box">
+      <mat-icon>videocam_off</mat-icon>
+      <strong>No screen recordings on {{ date() | date: 'd MMM y' }}</strong>
+      <span>The HR Lens agent records the screen continuously and uploads every 10 minutes.</span>
+    </div>
+  }
+}
+
+@if (playing(); as p) {
+  <div class="hl-cinema" role="dialog" aria-modal="true" aria-label="Screen recording" (click)="playing.set(null)">
+    <div class="hl-cinema-top" (click)="$event.stopPropagation()">
+      <div class="hl-glass">
+        <span class="hl-avatar" [style.background]="p.color">{{ p.initials }}</span>
+        <span class="hl-who">
+          <span class="hl-name">{{ p.name }}</span>
+          <span class="hl-meta">{{ date() | date: 'EEE, d MMM y' }} · {{ p.time }} – {{ p.until }} {{ zone().code }}</span>
+        </span>
+        <span class="hl-chip"><mat-icon inline>videocam</mat-icon> {{ p.duration }}</span>
+      </div>
+      <button type="button" class="hl-cinema-close" aria-label="Close" (click)="playing.set(null)"><mat-icon>close</mat-icon></button>
+    </div>
+
+    <div class="hl-stage" (click)="$event.stopPropagation()">
+      <!-- Plays on into the next piece, so a day can be watched straight through -->
+      <video class="player" [src]="p.url" controls autoplay playsinline (ended)="next()" (keydown.escape)="playing.set(null)">
+        Your browser cannot play this recording.
+      </video>
+    </div>
+
+    <div class="hl-glass hl-cinema-bottom" (click)="$event.stopPropagation()">
+      <button type="button" aria-label="Previous recording" [disabled]="!hasPrev()" (click)="prev()"><mat-icon>skip_previous</mat-icon></button>
+      <span class="sep"></span>
+      <button type="button" aria-label="Next recording" [disabled]="!hasNext()" (click)="next()"><mat-icon>skip_next</mat-icon></button>
+    </div>
+  </div>
+}
+
+<ng-template #laptop>
+  <svg class="laptop" viewBox="0 0 120 70" aria-hidden="true">
+    <!-- plant -->
+    <g fill="#4fc3b7">
+      <path d="M14 62 C6 56 5 47 8 41 C13 46 16 54 14 62 Z" />
+      <path d="M15 62 C13 52 17 44 23 40 C24 48 21 57 15 62 Z" />
+      <path d="M13 62 C7 61 3 57 2 52 C8 53 12 57 13 62 Z" />
+    </g>
+    <!-- screen -->
+    <rect x="19" y="4" width="86" height="54" rx="3" fill="#263238" />
+    <rect x="23" y="8" width="78" height="46" fill="#fff" />
+    <g fill="#263238"><circle cx="27" cy="12" r="1" /><circle cx="31" cy="12" r="1" /><circle cx="35" cy="12" r="1" /></g>
+    <rect x="28" y="18" width="30" height="24" fill="#dfe5e7" />
+    <circle cx="36" cy="25" r="3" fill="#fff" />
+    <path d="M28 42 L40 30 L47 37 L51 33 L58 42 Z" fill="#b5c0c4" />
+    <g fill="#dfe5e7"><rect x="63" y="20" width="32" height="2.5" /><rect x="63" y="27" width="26" height="2.5" /><rect x="63" y="34" width="32" height="2.5" /><rect x="63" y="41" width="20" height="2.5" /></g>
+    <!-- base -->
+    <path d="M10 58 H114 V60 C114 63 111 65 108 65 H16 C13 65 10 63 10 60 Z" fill="#263238" />
+    <rect x="54" y="58" width="16" height="2.5" rx="1" fill="#546e7a" />
+    <!-- play -->
+    <circle cx="62" cy="31" r="12" fill="#757575" opacity="0.92" />
+    <path d="M58 24 L70 31 L58 38 Z" fill="#fff" />
+  </svg>
+</ng-template>

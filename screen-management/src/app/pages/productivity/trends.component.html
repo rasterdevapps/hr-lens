@@ -1,0 +1,266 @@
+<app-people-panel [(selection)]="selection" />
+
+<section class="main">
+  <app-period-toolbar [period]="period" [title]="title()" />
+
+  <nav class="tabs">
+    @for (t of tabs; track t.key) {
+      <a [routerLink]="t.route" [class.active]="t.key === 'trends'"><mat-icon>{{ t.icon }}</mat-icon>{{ t.label }}</a>
+    }
+  </nav>
+
+  @let tr = trends();
+  <div class="scroll" [class.busy]="tr.loading">
+    @if (tr.error) {
+      <div class="card">
+        <div class="state error">
+          <mat-icon>error_outline</mat-icon>
+          <span>{{ tr.error }}</span>
+          <button type="button" class="retry" (click)="retry()">Try again</button>
+        </div>
+      </div>
+    } @else {
+      <!-- Totals -->
+      <div class="tiles">
+        @for (t of tiles(); track t.label) {
+          <div class="tile" [class]="'tile ' + t.tone">
+            <span class="icon"><mat-icon>{{ t.icon }}</mat-icon></span>
+            <span class="label">{{ t.label }}</span>
+            <span class="value">{{ t.value }}</span>
+          </div>
+        }
+      </div>
+
+      <!-- Productivity Bar -->
+      @if (bars(); as b) {
+        <div class="card pbar">
+          <div class="card-head">
+            <h3>Productivity Bar
+              <mat-icon class="info" [matTooltip]="b.unit === 'slot' ? 'Each bar is 5 minutes: how much of it was spent at each level' : 'Each bar is a day, against 8 expected hours per person'">info_outline</mat-icon>
+            </h3>
+            <ul class="legend-row">
+              @for (l of levels; track l.key) { <li><i [style.background]="l.color"></i>{{ l.label }}</li> }
+            </ul>
+          </div>
+          <div class="chart">
+            <div class="y">@for (t of [100, 75, 50, 25, 0]; track t) { <span>{{ t }}%</span> }</div>
+            <div class="plot" [class.slots]="b.unit === 'slot'">
+              @for (bar of b.items; track bar.key) {
+                <div class="col" [matTooltip]="bar.tip">
+                  <div class="stack">
+                    <span class="neutral" [style.height.%]="bar.neutral"></span>
+                    <span class="unproductive" [style.height.%]="bar.unproductive"></span>
+                    <span class="productive" [style.height.%]="bar.productive"></span>
+                  </div>
+                  @if (bar.label) { <span class="x">{{ bar.label }}</span> }
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      }
+
+      @if (tr.data && !tr.data.totals.working && !tr.loading) {
+        <div class="card">
+          <div class="state">
+            <mat-icon>insights</mat-icon>
+            <span>No activity tracked in this period</span>
+          </div>
+        </div>
+      } @else {
+        <div class="grid-2">
+          <!-- Productive activity -->
+          <div class="card">
+            <div class="card-head">
+              <h3>Productive Activity
+                <mat-icon class="info" matTooltip="Share of working time at each productivity level">info_outline</mat-icon>
+              </h3>
+            </div>
+            <div class="donut-wrap">
+              <div class="donut-box">
+                <svg class="donut" viewBox="0 0 100 100" role="img" aria-label="Productive activity">
+                  <circle class="ring" cx="50" cy="50" [attr.r]="donutR" />
+                  @for (s of donut(); track s.key) {
+                    <circle cx="50" cy="50" [attr.r]="donutR" [attr.stroke]="s.color"
+                            [attr.stroke-dasharray]="s.dash" [attr.stroke-dashoffset]="s.offset">
+                      <title>{{ s.label }} {{ hm(s.value) }} ({{ s.pct | number: '1.0-1' }}%)</title>
+                    </circle>
+                  }
+                </svg>
+                @if (donut()[0]; as p) {
+                  <div class="center"><strong>{{ p.pct | number: '1.0-0' }}%</strong><span>productive</span></div>
+                }
+              </div>
+              <ul class="legend">
+                @for (s of donut(); track s.key) {
+                  <li><span class="dot" [style.background]="s.color"></span>{{ s.label }}
+                    <strong>{{ s.pct | number: '1.0-1' }}%</strong><span class="muted">{{ hm(s.value) }}</span></li>
+                }
+              </ul>
+            </div>
+          </div>
+
+          <!-- Breakdown -->
+          <div class="card">
+            <div class="card-head">
+              <h3>Productive Breakdown</h3>
+              <span class="hint">Exp = expected (8h per weekday)</span>
+            </div>
+            @if (breakdown(); as b) {
+              <div class="table-scroll">
+                <table class="breakdown">
+                  <thead>
+                    <tr><th>Activity</th>@for (h of b.heads; track h) { <th>{{ h }}</th> }</tr>
+                  </thead>
+                  <tbody>
+                    @for (row of b.rows; track row.key) {
+                      <tr>
+                        <td class="what"><span class="dot" [style.background]="row.color"></span>{{ row.label }}</td>
+                        @for (c of row.cells; track $index) {
+                          <td>
+                            <div class="cell">
+                              <strong>{{ c.value }}</strong>
+                              <span class="share" [class]="'share ' + row.key">{{ c.pct | number: '1.0-1' }}%
+                                @if (c.below) { <mat-icon matTooltip="Below expected hours">south</mat-icon> }
+                              </span>
+                            </div>
+                            @if (row.key === 'working') { <small>Exp {{ c.expected }}</small> }
+                          </td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Categories -->
+        <div class="grid-2 table-first">
+          <div class="card">
+            <div class="card-head"><h3>Category Breakdown</h3></div>
+            <div class="table-scroll">
+              <table class="breakdown categories">
+                <thead>
+                  <tr><th>Category</th>@for (h of heads(); track h) { <th>{{ h }}</th> }</tr>
+                </thead>
+                <tbody>
+                  @for (c of categoryRows(); track c.name) {
+                    <tr>
+                      <td class="what"><span class="dot" [style.background]="c.color"></span>{{ c.name }}</td>
+                      @for (cell of c.cells; track $index) {
+                        <td>
+                          <div class="cell">
+                            <strong>{{ cell.seconds ? hm(cell.seconds) : '–' }}</strong>
+                            @if (cell.seconds) { <span class="share" [style.color]="c.color">{{ cell.percent | number: '1.0-1' }}%</span> }
+                          </div>
+                        </td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>Categories Activity
+                <mat-icon class="info" matTooltip="Share of working time in each category">info_outline</mat-icon>
+              </h3>
+            </div>
+            <div class="donut-wrap">
+              <div class="donut-box">
+                <svg class="donut" viewBox="0 0 100 100" role="img" aria-label="Categories activity">
+                  <circle class="ring" cx="50" cy="50" [attr.r]="donutR" />
+                  @for (s of categoryDonut(); track s.name) {
+                    <circle cx="50" cy="50" [attr.r]="donutR" [attr.stroke]="s.color"
+                            [attr.stroke-dasharray]="s.dash" [attr.stroke-dashoffset]="s.offset">
+                      <title>{{ s.name }} {{ hm(s.seconds) }} ({{ s.percent | number: '1.0-1' }}%)</title>
+                    </circle>
+                  }
+                </svg>
+                @if (categoryDonut()[0]; as top) {
+                  <div class="center"><strong>{{ categoryDonut().length }}</strong><span>categories</span></div>
+                }
+              </div>
+              <ul class="legend">
+                @for (s of categoryDonut(); track s.name) {
+                  <li><span class="dot" [style.background]="s.color"></span>{{ s.name }}
+                    <strong>{{ s.percent | number: '1.0-1' }}%</strong><span class="muted">{{ hm(s.seconds) }}</span></li>
+                }
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top applications per level -->
+        <div class="grid-3">
+          @for (l of levels; track l.key) {
+            @let apps = tr.data?.applications?.[l.key] ?? [];
+            <div class="card apps" [class]="'card apps ' + l.key">
+              <div class="card-head">
+                <h3><mat-icon class="lvl">{{ l.icon }}</mat-icon>{{ l.label }} Applications</h3>
+              </div>
+              @for (a of apps; track a.name) {
+                <div class="app-row">
+                  <span class="name" [title]="a.name">{{ a.name }}</span>
+                  <span class="time">{{ hm(a.seconds) }}</span>
+                  <span class="pct">{{ a.percent | number: '1.0-1' }}%</span>
+                  <span class="meter"><span [style.width.%]="a.percent" [style.background]="l.color"></span></span>
+                </div>
+              } @empty {
+                <div class="none"><mat-icon>inbox</mat-icon>No {{ l.label.toLowerCase() }} applications</div>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Daily timelines -->
+        @if (dayRows(); as d) {
+          <div class="card days">
+            <div class="card-head">
+              <h3>Daily Timeline</h3>
+              <ul class="legend-row">
+                @for (l of levels; track l.key) { <li><i [style.background]="l.color"></i>{{ l.label }}</li> }
+                <li><i class="away"></i>Away</li>
+              </ul>
+            </div>
+            <div class="table-scroll tall">
+              <table class="timeline">
+                <thead>
+                  <tr>
+                    <th class="date-col">Date</th>
+                    <th class="track-col"><div class="hours">@for (h of d.hours; track h.left) { <span [style.left.%]="h.left">{{ h.label }}</span> }</div></th>
+                    <th class="num">Active</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of d.rows; track row.date) {
+                    <tr [class.selected]="row.selected">
+                      <td class="date-col">{{ row.label }}</td>
+                      <td class="track-col">
+                        <div class="lane">
+                          @for (h of d.hours; track h.left) { <i class="grid" [style.left.%]="h.left"></i> }
+                          @for (s of row.segments; track s.start) {
+                            <span class="seg" [class]="'seg ' + s.productivity" [style.left.%]="s.left" [style.width.%]="s.width" [matTooltip]="s.tip"></span>
+                          }
+                        </div>
+                      </td>
+                      <td class="num">{{ row.worked }}</td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="3" class="empty-row">No activity in this period</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        } @else if (members().length > 1) {
+          <p class="hint center">Pick one person to see their daily timeline.</p>
+        }
+      }
+    }
+  </div>
+</section>

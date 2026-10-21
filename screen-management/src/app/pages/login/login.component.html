@@ -1,0 +1,50 @@
+<main class="page">
+  <aside class="hero" aria-hidden="true">
+    <div class="brand">
+      <span class="brand-logo"><mat-icon>center_focus_strong</mat-icon></span>
+      <span class="brand-text">HR Lens</span>
+    </div>
+    <div class="pitch">
+      <h2>See how your team's day really goes.</h2>
+      <p>Attendance, productivity and screen activity in one place.</p>
+      <ul>
+        <li><mat-icon>schedule</mat-icon>Automatic time and attendance</li>
+        <li><mat-icon>insights</mat-icon>Productivity and activity levels</li>
+        <li><mat-icon>photo_library</mat-icon>Screenshots and screen recordings</li>
+      </ul>
+    </div>
+    <small>© HR Lens</small>
+  </aside>
+
+  <form class="card" novalidate (submit)="$event.preventDefault(); submit()">
+    <div>
+      <h1>Welcome back</h1>
+      <p class="sub">Sign in to your HR Lens account</p>
+    </div>
+
+    @if (error()) {
+      <p class="error" role="alert"><mat-icon>error_outline</mat-icon>{{ error() }}</p>
+    }
+
+    <label>Email
+      <input type="email" name="email" autocomplete="username" autofocus [class.invalid]="form.shown()['email']"
+             [value]="email" (input)="set('email', $any($event.target).value)" (blur)="form.blur('email')">
+      @if (form.shown()['email']; as e) { <span class="field-error" role="alert">{{ e }}</span> }
+    </label>
+
+    <label>Password
+      <span class="password">
+        <input [type]="showPassword() ? 'text' : 'password'" name="password" autocomplete="current-password"
+               [class.invalid]="form.shown()['password']"
+               [value]="password" (input)="set('password', $any($event.target).value)" (blur)="form.blur('password')">
+        <button type="button" (click)="showPassword.set(!showPassword())"
+                [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'">
+          <mat-icon>{{ showPassword() ? 'visibility_off' : 'visibility' }}</mat-icon>
+        </button>
+      </span>
+      @if (form.shown()['password']; as e) { <span class="field-error" role="alert">{{ e }}</span> }
+    </label>
+
+    <button type="submit" class="primary" [disabled]="busy()">{{ busy() ? 'Signing in…' : 'Sign in' }}</button>
+  </form>
+</main>

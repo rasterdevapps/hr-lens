@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "HR Lens",
+  "version": "1.0.0",
+  "description": "Tells the HR Lens agent on this computer which website the front tab shows (the site name only).",
+  "permissions": [
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:47123/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "minimum_chrome_version": "110",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApKZlnEcm5FaQ2tQaAPoIsKg8/W5aG1LvYV5SvHShaFbl6tI+9GhfPWzdpb5Kz+enAuwgsqjVQrudNX+Pvq+OXYlMofTcewdSeQGIsH8DDHizt3MZUFiApmE/iEtSvTBGJCUu7NyR8sZXLM+Y3DJ1Qzpwc5f98QmlSJLSpnFNW+6n6Ug7qAuDF3fD91qSzts+HS983sXAdEBryZe/Ab/VOvuHKpx6Azj/4htah+16Hh2IvlnqOGuu2gJNCMEvFtzprP4UYQPmDoUMo7Da5SZGlsWddETP4fg4GHd9Ls6dIAIOgxaW5nuPp1lzhelPXHq8bCBnmn3y8V6K/AL+ls+JkQIDAQAB"
+}

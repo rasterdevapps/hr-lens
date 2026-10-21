@@ -1,0 +1,18 @@
+# HTTPS for HR Lens with automatic Let's Encrypt certificates.
+# Use this if the office router can forward ports 80 and 443 to the server and your domain's
+# A record points at the office's public IP (add DDNS if that IP changes).
+#
+#   sudo apt install caddy
+#   sudo cp Caddyfile /etc/caddy/Caddyfile   # edit the domain first
+#   sudo systemctl restart caddy
+#
+# Caddy gets and renews the certificate and forwards everything to the HR Lens server on :8080.
+
+hrlens.example.com {
+	encode zstd gzip
+	# Recordings can be large; allow big uploads from agents.
+	request_body {
+		max_size 500MB
+	}
+	reverse_proxy 127.0.0.1:8080
+}

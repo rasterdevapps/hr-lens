@@ -1,0 +1,94 @@
+<div class="head">
+  <h3 class="day">Live screens</h3>
+  <span class="note"><mat-icon inline>info_outline</mat-icon>Refreshes every 2 seconds while this page is open. Nothing here is stored.</span>
+  @if (canFullscreen && shown().length) {
+    <button type="button" class="hl-btn" (click)="toggleFullscreen(host)">
+      <mat-icon>{{ fullscreen() === host ? 'fullscreen_exit' : 'fullscreen' }}</mat-icon>
+      {{ fullscreen() === host ? 'Exit full screen' : 'Full screen' }}
+    </button>
+  }
+</div>
+
+@if (error()) {
+  <p class="banner" role="alert"><mat-icon>wifi_off</mat-icon>{{ error() }}</p>
+}
+
+<div class="tiles" [class.single]="shown().length === 1">
+  @for (e of shown(); track e.id) {
+    @let t = tile(e);
+    <article class="tile" [class]="'tile ' + t.state">
+      <header>
+        <span class="avatar" [style.background]="t.color">{{ t.initials }}</span>
+        <span class="who">
+          <strong [title]="e.name">{{ e.name }}</strong>
+          <small>
+            @if (t.device) { <mat-icon inline>computer</mat-icon>{{ t.device }} }
+            @else { No agent installed }
+          </small>
+        </span>
+        <span class="state">
+          @switch (t.state) {
+            @case ('live') { <i class="pulse"></i>Live }
+            @case ('connecting') { Connecting… }
+            @case ('noscreen') { Online }
+            @default { Offline }
+          }
+        </span>
+      </header>
+      <button type="button" class="screen" [disabled]="!t.frame" (click)="enlarged.set(e)"
+              [attr.aria-label]="'Enlarge the live screen of ' + e.name">
+        @if (t.frame; as f) {
+          <img [src]="f.url" [alt]="'Live screen of ' + e.name">
+          <span class="stamp">{{ f.at | date: 'h:mm:ss a' }}</span>
+        } @else {
+          <span class="empty">
+            <mat-icon>{{ t.state === 'connecting' ? 'hourglass_top' : 'desktop_access_disabled' }}</mat-icon>
+            @if (t.state === 'noscreen') {
+              Screen view is not available for this computer yet (Windows / Mac agent)
+            } @else if (t.state === 'connecting') {
+              Waiting for the first picture…
+            } @else if (t.lastSeen) {
+              Last seen {{ t.lastSeen | date: 'd MMM, h:mm a' }}
+            } @else if (loaded()) {
+              Not connected
+            }
+          </span>
+        }
+      </button>
+    </article>
+  } @empty {
+    <div class="placeholder-box"><mat-icon>live_tv</mat-icon><span>Choose a person or team on the left</span></div>
+  }
+</div>
+@if (hidden()) {
+  <p class="more">{{ hidden() }} more in this team: pick a person on the left to watch them.</p>
+}
+
+@if (enlarged(); as e) {
+  @let t = tile(e);
+  <div #cinema class="hl-cinema" role="dialog" aria-modal="true" aria-label="Live screen" (click)="closeEnlarged()">
+    <div class="hl-cinema-top" (click)="$event.stopPropagation()">
+      <div class="hl-glass">
+        <span class="hl-avatar" [style.background]="t.color">{{ t.initials }}</span>
+        <span class="hl-who">
+          <span class="hl-name">{{ e.name }}</span>
+          <span class="hl-meta">{{ t.device }}@if (t.frame) { · {{ t.frame.at | date: 'h:mm:ss a' }} }</span>
+        </span>
+        <span class="hl-chip live-chip"><i class="pulse"></i>{{ t.state === 'live' ? 'Live' : 'Offline' }}</span>
+      </div>
+      <span class="cinema-actions">
+        @if (canFullscreen) {
+          <button type="button" class="hl-cinema-close fs" (click)="toggleFullscreen(cinema)"
+                  [attr.aria-label]="fullscreen() === cinema ? 'Exit full screen' : 'Full screen'"
+                  [matTooltip]="fullscreen() === cinema ? 'Exit full screen' : 'Full screen'">
+            <mat-icon>{{ fullscreen() === cinema ? 'fullscreen_exit' : 'fullscreen' }}</mat-icon>
+          </button>
+        }
+        <button type="button" class="hl-cinema-close" aria-label="Close" (click)="closeEnlarged()"><mat-icon>close</mat-icon></button>
+      </span>
+    </div>
+    <div class="hl-stage" (click)="$event.stopPropagation()">
+      @if (t.frame; as f) { <img class="big" [src]="f.url" [alt]="'Live screen of ' + e.name" (dblclick)="toggleFullscreen(cinema)"> }
+    </div>
+  </div>
+}

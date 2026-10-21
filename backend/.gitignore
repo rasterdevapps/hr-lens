@@ -1,0 +1,6 @@
+.env
+/bin/
+/data/
+/dist/
+/browser-extension/key.pem
+/agent-release.key

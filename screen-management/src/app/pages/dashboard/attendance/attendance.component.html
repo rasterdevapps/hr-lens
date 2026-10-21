@@ -1,0 +1,80 @@
+@if (members().length > 1) {
+  <div class="members" role="group" aria-label="Team member">
+    @for (e of members(); track e.id) {
+      <button type="button" [class.active]="employee() === e" [attr.aria-pressed]="employee() === e" (click)="pick(e)">{{ e.name }}</button>
+    }
+  </div>
+}
+
+<div class="stats">
+  @for (s of stats(); track s.label) {
+    <div class="stat">
+      <div class="stat-label">{{ s.label }}</div>
+      <div class="stat-value" [class]="'stat-value ' + s.tone">{{ s.value }}</div>
+    </div>
+  }
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="date-col">
+          <button type="button" class="sort" (click)="ascending.set(!ascending())"
+                  [attr.aria-label]="'Sort by date, ' + (ascending() ? 'oldest first' : 'newest first')">
+            DATE <mat-icon>{{ ascending() ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+          </button>
+        </th>
+        <th>In Time</th>
+        <th>Finish<br>Time</th>
+        <th>Working<br>Hours</th>
+        <th>Productive<br>Hours</th>
+        <th>Idle<br>Hours</th>
+        <th>Online<br>Hours</th>
+        <th class="timeline-col">
+          <div class="track ticks">
+            @for (t of ticks; track $index) {
+              <span [style.left.%]="t.left">{{ t.time }}<br>{{ t.period }}</span>
+            }
+          </div>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (d of rows(); track trackDay(d)) {
+        @if (d.absent) {
+          <tr class="absent">
+            <td class="date-col">
+              {{ d.date | date: 'd MMM y EEE' }}
+              <mat-icon class="warn">warning</mat-icon>
+            </td>
+            <td colspan="7" class="absent-cell">Absent</td>
+          </tr>
+        } @else {
+          <tr>
+            <td class="date-col">{{ d.date | date: 'd MMM y EEE' }}</td>
+            <td class="in">
+              {{ clock(d.inTime) }}
+              @if (d.late) { <span class="late" [matTooltip]="lateTip(d)">Late</span> }
+            </td>
+            <td>{{ clock(d.finish) }}</td>
+            <td>{{ hm(d.working) }}</td>
+            <td>{{ hm(d.productive) }}</td>
+            <td>{{ hm(d.idle) }}</td>
+            <td>{{ hm(d.online) }}</td>
+            <td class="timeline-col">
+              <div class="track">
+                @for (s of d.segments; track $index) {
+                  <span class="seg" [class.idle]="s.idle" [style.left.%]="left(s)" [style.width.%]="width(s)"
+                        [matTooltip]="tip(s)"></span>
+                }
+              </div>
+            </td>
+          </tr>
+        }
+      } @empty {
+        <tr><td colspan="8" class="absent-cell">No attendance for this period</td></tr>
+      }
+    </tbody>
+  </table>
+</div>

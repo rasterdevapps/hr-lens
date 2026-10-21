@@ -1,0 +1,116 @@
+<div class="hl-intro">
+  <div>
+    <h2>Teams</h2>
+    <p>Groups of people used across reports and the Employees / Teams panel.</p>
+  </div>
+  @if (canManage()) {
+    <button type="button" class="hl-btn primary" (click)="add()"><mat-icon>group_add</mat-icon>Add team</button>
+  }
+</div>
+
+<nav class="hl-tabs">
+  @for (t of tabs; track t.key) {
+    <a [routerLink]="t.route" [class.active]="t.key === 'teams'"><mat-icon>{{ t.icon }}</mat-icon>{{ t.label }}</a>
+  }
+</nav>
+
+<div class="toolbar">
+  <div class="hl-seg" role="group" aria-label="Status">
+    <button type="button" [class.active]="showing() === 'active'" [attr.aria-pressed]="showing() === 'active'"
+            (click)="showing() !== 'active' && toggleShowing()">Active</button>
+    <button type="button" [class.active]="showing() === 'inactive'" [attr.aria-pressed]="showing() === 'inactive'"
+            (click)="showing() !== 'inactive' && toggleShowing()">Archived</button>
+  </div>
+  @if (notice()) {
+    <p class="notice" role="status"><mat-icon>info_outline</mat-icon>{{ notice() }}
+      <button type="button" aria-label="Dismiss" (click)="notice.set('')"><mat-icon>close</mat-icon></button>
+    </p>
+  }
+  <span class="spacer"></span>
+  <button type="button" class="icon" aria-label="Help"
+          matTooltip="Team Size counts active users. Archiving hides a team from the Employees / Teams panel and the user form; its members keep their team and return when it is restored.">
+    <mat-icon>help_outline</mat-icon>
+  </button>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Team</th>
+        <th>Size</th>
+        <th>Created</th>
+        @if (canManage()) { <th>Actions</th> }
+      </tr>
+    </thead>
+    <tbody>
+      @for (t of teams(); track t.id) {
+        <tr>
+          <td>
+            @let tl = tile(t.name);
+            <span class="team"><span class="tile" [style.background]="tl.color">{{ tl.letter }}</span>{{ t.name }}</span>
+          </td>
+          <td><span class="hl-chip"><mat-icon inline>person</mat-icon>{{ t.members }} {{ t.members === 1 ? 'member' : 'members' }}</span></td>
+          <td class="muted">{{ t.createdAt | date: 'MMM d, y' }}</td>
+          @if (canManage()) {
+            <td class="actions">
+              <button type="button" [attr.aria-label]="'Rename ' + t.name" matTooltip="Rename" (click)="edit(t)">
+                <mat-icon>edit_square</mat-icon>
+              </button>
+              @if (t.status === 'active') {
+                <button type="button" [attr.aria-label]="'Archive ' + t.name" matTooltip="Archive" (click)="setStatus(t, 'inactive')">
+                  <mat-icon>archive</mat-icon>
+                </button>
+              } @else {
+                <button type="button" [attr.aria-label]="'Restore ' + t.name" matTooltip="Restore" (click)="setStatus(t, 'active')">
+                  <mat-icon>unarchive</mat-icon>
+                </button>
+              }
+            </td>
+          }
+        </tr>
+      } @empty {
+        <tr>
+          <td class="empty" colspan="4">
+            @if (listError()) {
+              <span class="failed" role="alert">{{ listError() }}</span>
+              <button type="button" class="link" (click)="load()">Try again</button>
+            } @else if (loading()) {
+              Loading…
+            } @else {
+              {{ showing() === 'active' ? 'No teams yet' : 'No archived teams' }}
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>
+
+<!-- Add / rename -->
+@if (draft(); as d) {
+  <div class="hl-backdrop" (click)="cancel()">
+    <form class="hl-dialog" role="dialog" aria-modal="true" aria-labelledby="team-title" novalidate
+          (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); save()">
+      <header class="hl-head">
+        <span class="hl-badge"><mat-icon>{{ d.id === null ? 'group_add' : 'edit' }}</mat-icon></span>
+        <div class="hl-title">
+          <h2 id="team-title">{{ d.id === null ? 'Add team' : 'Rename team' }}</h2>
+          <p>{{ d.id === null ? 'Create a team to group people and reports.' : 'Give this team a new name.' }}</p>
+        </div>
+        <button type="button" class="hl-close" aria-label="Close" (click)="cancel()"><mat-icon>close</mat-icon></button>
+      </header>
+      <div class="hl-body">
+        <label class="hl-field">Team name
+          <input type="text" maxlength="100" autofocus placeholder="e.g. Engineering" [class.invalid]="nameError()"
+                 [value]="d.name" (input)="setName(d, $any($event.target).value)" (blur)="form.blur('name')">
+          @if (nameError()) { <span class="hl-error" role="alert"><mat-icon inline>error_outline</mat-icon>{{ nameError() }}</span> }
+        </label>
+      </div>
+      <footer class="hl-foot">
+        <button type="button" class="hl-btn" (click)="cancel()">Cancel</button>
+        <button type="submit" class="hl-btn primary" [disabled]="saving()"><mat-icon>check</mat-icon>{{ saving() ? 'Saving…' : 'Save team' }}</button>
+      </footer>
+    </form>
+  </div>
+}

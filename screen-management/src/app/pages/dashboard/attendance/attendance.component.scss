@@ -1,0 +1,151 @@
+$ink: var(--ink);
+$head-bg: var(--primary-soft);
+$line: var(--border);
+$productive: #22c55e;
+$idle: #facc15;
+
+:host { display: block; color: $ink; }
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat {
+  position: relative;
+  padding: 16px 16px 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+
+  &::before { content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: currentColor; }
+
+  .stat-label { color: var(--muted); font-size: 0.8rem; font-weight: 500; }
+  .stat-value { margin-top: 8px; color: var(--ink); font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  &:has(.teal) { color: #4f46e5; }
+  &:has(.blue) { color: #0ea5e9; }
+  &:has(.green) { color: #22c55e; }
+  &:has(.amber) { color: #f59e0b; }
+  &:has(.grey) { color: #94a3b8; }
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+table {
+  width: 100%;
+  min-width: 1240px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th {
+  height: 44px;
+  padding: 0 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid $line;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+td {
+  height: 47px;
+  padding: 0 12px;
+  border-bottom: 1px solid $line;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+tbody tr:hover { background: var(--primary-tint); }
+tbody tr:last-child td { border-bottom: 0; }
+
+.date-col { width: 145px; padding-left: 24px; text-align: left; }
+th.date-col { text-align: center; }
+
+.sort {
+  display: inline-flex; align-items: center; gap: 48px;
+  padding: 0; border: 0; background: none;
+  font: inherit; color: inherit; cursor: pointer;
+  mat-icon { font-size: 16px; width: 16px; height: 16px; color: var(--muted); }
+}
+
+.late {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.absent {
+  .date-col { color: var(--border-strong); }
+  .warn { float: right; font-size: 13px; width: 13px; height: 13px; margin-top: 4px; color: var(--warning); }
+}
+.absent-cell { color: $ink; }
+
+// ---------- 24h timeline ----------
+.timeline-col { width: 45%; min-width: 560px; padding: 0 22px; }
+td.timeline-col { border-right: 0; }
+
+.track {
+  position: relative;
+  height: 47px;
+  border-right: 1px solid $line;
+  // one grid line every 2 hours
+  background: repeating-linear-gradient(to right, $line 0 1px, transparent 1px calc(100% / 12));
+}
+
+.ticks {
+  height: 42px;
+  border: 0;
+  background: none;
+  span { position: absolute; top: 0; transform: translateX(-50%); font-size: 0.75rem; text-align: center; }
+}
+
+.seg {
+  position: absolute;
+  top: 13px;
+  height: 20px;
+  min-width: 1px;
+  border-radius: 3px;
+  background: $productive;
+  &.idle { background: $idle; }
+}
+
+@media (max-width: 900px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat { padding: 16px 8px 20px; }
+}
+
+// Team selected: choose which member's attendance to show
+.members {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+
+  button {
+    height: 32px; padding: 0 14px;
+    border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+    font: inherit; font-size: 0.85rem; color: inherit; cursor: pointer;
+    &.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-dark); }
+  }
+}
